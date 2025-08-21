@@ -230,9 +230,10 @@ TCT:<span id="londonClock">loading...</span></pre>
 document.body.insertAdjacentHTML('beforeend', preHtml);
 const newTimer = document.getElementById('updateClock');
 
-
+console.log(ocUpdated);
 const ocDate = parseLondonTimeStringToDate(ocUpdated);
 const activityDate = parseLondonTimeStringToDate(activityUpdated);
+console.log(ocDate);
 
 const now = Date.now();
 const THIRTY_MIN = 30 * 60 * 1000;
@@ -851,6 +852,7 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
 
 
