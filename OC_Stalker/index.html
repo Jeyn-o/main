@@ -238,11 +238,14 @@ const now = Date.now();
 const THIRTY_MIN = 30 * 60 * 1000;
 
 if (now - ocDate < THIRTY_MIN && now - activityDate < THIRTY_MIN) {
+  console.log("Update is recent");
   newTimer.style.background = "#008800b3"; //green
 } else {
+  console.log("Update is outdated");
   newTimer.style.background = "#880000b3"; //red
 }
-
+console.log("=");
+	  console.log(`ocDate: ${ocDate}, activityDate: ${activityDate}, now: ${now}, THIRTY_MIN: ${THIRTY_MIN}`);
 
 
 	adjust_environment();
@@ -848,5 +851,6 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
 
