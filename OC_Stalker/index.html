@@ -173,6 +173,16 @@ updateClockNoDST();
 
 // Update every second
 setInterval(updateClockNoDST, 1000);
+	
+function parseLondonTimeStringToDate(timeString) {
+  // Input format: "21/08/2025, 14:22:05" (en-GB)
+  const [datePart, timePart] = timeString.split(', ');
+  const [day, month, year] = datePart.split('/');
+  const [hours, minutes, seconds] = timePart.split(':');
+
+  // Create Date in UTC
+  return new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+}
 
 
 document.addEventListener('DOMContentLoaded', async function () {
@@ -218,6 +228,22 @@ TCT:<span id="londonClock">loading...</span></pre>
 `;
 
 document.body.insertAdjacentHTML('beforeend', preHtml);
+const newTimer = document.getElementById('updateClock');
+
+
+const ocDate = parseLondonTimeStringToDate(ocUpdated);
+const activityDate = parseLondonTimeStringToDate(activityUpdated);
+
+const now = Date.now();
+const THIRTY_MIN = 30 * 60 * 1000;
+
+if (now - ocDate < THIRTY_MIN && now - activityDate < THIRTY_MIN) {
+  newTimer.style.background = "#008800b3"; //green
+} else {
+  newTimer.style.background = "#880000b3"; //red
+}
+
+
 
 	adjust_environment();
     populatePage();
@@ -822,4 +848,5 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
