@@ -492,7 +492,7 @@ async function populatePage() {
 		cprbodyhtml+=`<tr>`;
 		for(c=0;c<rolesheader.length;c++) {
 			if (dynamicArrays[crime][rolesheader[c]][b] === undefined) {
-				break; // exits the loop early
+				continue;
 			}
 			var name = dynamicArrays[crime][rolesheader[c]][b][0];
 			var cpr = dynamicArrays[crime][rolesheader[c]][b][1];
@@ -966,4 +966,5 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
