@@ -193,6 +193,50 @@ function createArray(name) {
   dynamicArrays[name] = [];
 }
 
+function purgeFormerMembersFromCprData(cprData, namesDb) {
+  const cleaned = {};
+
+  for (const opName in cprData) {
+    const opData = cprData[opName];
+    const newOpData = {};
+
+    for (const role in opData) {
+      // Check if this is a log entry (e.g. "Driver_log")
+      const isLog = role.endsWith("_log");
+      const baseRole = isLog ? role.slice(0, -4) : role;
+
+      if (!opData[role] || typeof opData[role] !== "object") {
+        newOpData[role] = opData[role]; // preserve non-object roles
+        continue;
+      }
+
+      // Clone the role sub-object and filter out unwanted IDs
+      const newRoleData = {};
+
+      for (const id in opData[role]) {
+        const names = namesDb[id];
+
+        // Remove if name list contains "Former Member"
+        if (names && names.includes("Former Member")) continue;
+
+        // OPTIONAL: Remove if ID doesn't exist in the names database
+        if (true) { // <-- Change to `false` if you want to keep unknowns
+          if (!names) continue;
+        }
+
+        newRoleData[id] = opData[role][id];
+      }
+
+      newOpData[role] = newRoleData;
+    }
+
+    cleaned[opName] = newOpData;
+  }
+
+  return cleaned;
+}
+
+
 document.addEventListener('DOMContentLoaded', async function () {
   const url1 = 'https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/main/BC_OC.JSON';
   const url2 = 'https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/main/BC_cron.JSON';
@@ -221,9 +265,11 @@ document.addEventListener('DOMContentLoaded', async function () {
 	console.log(names_data);
 	
 	const cprResponse = await fetchGitHubData(url4);
-	cpr_data = cprResponse;
+	const cleanedCpr = purgeFormerMembersFromCprData(cprResponse, names_data);
+	//cpr_data = cprResponse;
+	cpr_data = cleanedCpr;
 	console.log("Stored as cpr_data:");
-	console.log(cpr_data);
+	console.log(cpr_data); //cleanse "Former Member" entries
 	//End CPR page
 	
 	
@@ -284,6 +330,7 @@ const crimes_slots = {
 	"Blast from the Past": 		6, //done
 	"Stacking the Deck": 		4,
 	"Break the Bank": 			6, //done
+	"Clinical Precision":		4,
 	"Ace in the Hole": 			5
 };
 const crimes_tiers = {
@@ -304,6 +351,7 @@ const crimes_tiers = {
 	"Blast from the Past": 		7,
 	"Stacking the Deck": 		8,
 	"Break the Bank": 			8,
+	"Clinical Precision":		8
 	"Ace in the Hole": 			9
 };
 const crimes_chained = {
@@ -339,7 +387,7 @@ function sortEntries(containerSelector, sortFn) {
 
 function getName(id) {
 	const arr = names_data[id];
-	return arr ? arr[arr.length - 1] : undefined;
+	return arr ? arr[arr.length - 1] : "?";
 };
 
 async function populatePage() {
