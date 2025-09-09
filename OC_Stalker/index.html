@@ -561,7 +561,8 @@ async function populatePage() {
 			cprbodyhtml+= `
 				<td>  ${name}</td><td class="cpr">${cpr}</td>
 			`;
-			if(crime=="Break the Bank") {console.log(`Adding ${name} with ${cpr}CPR as ${rolesheader[c]} role in OC ${crime}`)};
+			//Used for verifying proper data insertion
+			//if(crime=="Break the Bank") {console.log(`Adding ${name} with ${cpr}CPR as ${rolesheader[c]} role in OC ${crime}`)};
 		};
 		cprbodyhtml+=`</tr>`;
 	};
@@ -1052,6 +1053,7 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
 
 
