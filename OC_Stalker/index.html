@@ -357,6 +357,19 @@ const crimes_tiers = {
 const crimes_chained = {
 	"Bidding War": "No Reserve"
 }
+const flying_times = {
+  Mexico: {standard: 26, airstrip: 18, wlt: 13, business: 8},
+  Cayman: {standard: 35, airstrip: 25, wlt: 18, business: 11},
+  Canada: {standard: 41, airstrip: 29, wlt: 20, business: 12},
+  Hawaii: {standard: 134, airstrip: 94, wlt: 67, business: 40},
+  UK: {standard: 159, airstrip: 171, wlt: 80, business: 48},
+  Argentina: {standard: 167, airstrip: 117, wlt: 83, business: 50},
+  Switzerland: {standard: 175, airstrip: 123, wlt: 88, business: 53},
+  Japan: {standard: 225, airstrip: 158, wlt: 113, business: 68},
+  China: {standard: 242, airstrip: 169, wlt: 121, business: 72},
+  UAE: {standard: 271, airstrip: 190, wlt: 135, business: 81},
+  SA: {standard: 297, airstrip: 208, wlt: 149, business: 89}
+}
 
 function sortAllSections() {
   // Sort Recruiting (oldest to newest by ready_at)
@@ -685,7 +698,29 @@ function generate_timeline(id) {
         const fromStr = `${sf.day} ${sf.time}`;
         const untilStr = (idx === activities.length - 1 && ocData.executed_at)
           ? 'Executed' : (tf ? `${tf.day !== sf.day ? tf.day + ' ' : ''}${tf.time}` : 'Now');
-        const statusText = `${a.status} from ${fromStr} until ${untilStr}`;
+        //const statusText = `${a.status} from ${fromStr} until ${untilStr}`;
+		let arrivalText = '';
+		if (
+  			(a.status.endsWith('Going') || a.status.endsWith('Returning')) &&
+  			a.end === null
+		) {
+  			const match = a.status.match(/^\[?(.*?)\]?\s*-\s*(Going|Returning)$/);
+ 			if (match) {
+    			const country = match[1];
+    			const flightType = a.travel_type || 'standard';
+    			const travelMinutes = flying_times?.[country]?.[flightType];
+
+    			if (travelMinutes) {
+      				const arrivalTs = a.start + travelMinutes * 60;
+     				const sf = shortFormat(a.start);
+      				const arrival = shortFormat(arrivalTs);
+      				const isNextDay = arrival.day !== sf.day;
+      				arrivalText = ` (ETA: ${isNextDay ? '(+)' : ''}${arrival.time})`;
+    			}
+  			}
+		}
+		const statusText = `${a.status} from ${fromStr} until ${untilStr}${arrivalText}`;
+
         seg.addEventListener('mouseenter', (e) => {
 			tooltip.innerText = statusText;
 			tooltip.style.display = 'block';
@@ -1016,4 +1051,5 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
