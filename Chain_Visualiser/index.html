@@ -1,1 +1,91 @@
+<html>
+ <head>
+ <title>Torn Chain Visualizer</title>
+  <script src="chainlog.js"></script>
+  <script>
+   document.addEventListener("DOMContentLoaded", () => {
+   openDatabase().catch(err => {
+    console.error("Failed to open DB on load:", err);
+    document.body.style.visibility = 'visible';
+    });
+   });
 
+  </script>
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+  const cbs = document.querySelectorAll('#footer input[type=checkbox]');
+  cbs.forEach(cb => {
+    cb.addEventListener('change', () => {
+      const targetClass = cb.getAttribute('data-target-class');
+      document.querySelectorAll(`.${targetClass}`).forEach(el => {
+        el.style.display = cb.checked ? '' : 'none';
+      });
+    });
+  });
+  
+  // Run initial toggle once to set display correctly on page load
+  cbs.forEach(cb => {
+    const targetClass = cb.getAttribute('data-target-class');
+    document.querySelectorAll(`.${targetClass}`).forEach(el => {
+      el.style.display = cb.checked ? '' : 'none';
+    });
+  });
+});
+
+  </script>
+  <style>
+  body {
+   background-color:gray
+  }
+  #chain_list table tbody tr:hover {
+    background-color: #f0f8ff; /* light blue */
+  }
+  th {
+    border: 1px solid black;
+  }
+  td {
+    border: 1px solid black;
+  }
+  body {
+    visibility: hidden;
+	padding-bottom: 60px;
+  }
+  .detailed_entry {
+	background-color: #afafaf;
+  }
+  #footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: white;   /* or whatever background you want */
+  border-top: 1px solid #ccc;
+  padding: 10px;
+  box-sizing: border-box;
+  z-index: 1000;       /* make sure it’s on top */
+  }
+  a {
+    color:black;
+	font-color:black;
+	font-style: italic;
+  }
+  </style>
+ </head>
+ <body>
+ <div id="header">
+  <span id="api_key_input_field"><input type="text" id="api_key_input" value="xdebhV4kVsmzMj8X"/><button onclick="API_submit()">Submit</button><span id="api_response_message"></span></span>
+ </div>
+ <div id="body">
+  <div id="chain_list"></div>
+ </div>
+ <div id="footer">
+  <label><input type="checkbox" data-target-class="td_stealth" checked> Stealth</label>
+  <label><input type="checkbox" data-target-class="td_war" checked> War</label>
+  <label><input type="checkbox" data-target-class="td_raid" checked> Raid</label>
+  <label><input type="checkbox" data-target-class="td_interrupt" checked> Interrupted</label>
+  <label><input type="checkbox" data-target-class="td_effects" checked> Effects</label>
+  <label><input type="checkbox" data-target-class="td_enemy_loss" checked> Enemy respect loss</label>
+  <label><input type="checkbox" data-target-class="td_multi" checked> Multipliers</label>
+ </div>
+ </body>
+</html>
