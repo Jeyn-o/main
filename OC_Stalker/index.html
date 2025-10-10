@@ -267,6 +267,8 @@ document.addEventListener('DOMContentLoaded', async function () {
 	const cprResponse = await fetchGitHubData(url4);
 	const cleanedCpr = purgeFormerMembersFromCprData(cprResponse, names_data);
 	//cpr_data = cprResponse;
+	  console.log("raw CPR:");
+	  console.log(cprResponse);
 	cpr_data = cleanedCpr;
 	console.log("Stored as cpr_data:");
 	console.log(cpr_data); //cleanse "Former Member" entries
@@ -1055,6 +1057,7 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
 
 
