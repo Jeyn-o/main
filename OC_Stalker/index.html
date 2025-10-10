@@ -219,10 +219,12 @@ function purgeFormerMembersFromCprData(cprData, namesDb) {
         // Remove if name list contains "Former Member"
         if (names && names.includes("Former Member")) continue;
 
-        // OPTIONAL: Remove if ID doesn't exist in the names database
-        if (false) { // <-- Change to `false` if you want to keep unknowns
-          if (!names) continue;
-        }
+        if (!names) {
+ 		 	// Keep them if you want to include unknowns
+  			newRoleData[id] = opData[role][id];
+ 		 	continue;
+		}
+
 
         newRoleData[id] = opData[role][id];
       }
@@ -1057,6 +1059,7 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
 
 
