@@ -214,20 +214,21 @@ function purgeFormerMembersFromCprData(cprData, namesDb) {
       const newRoleData = {};
 
       for (const id in opData[role]) {
-        const names = namesDb[id];
+  		const idStr = String(id);
+  		const names = namesDb[idStr];
 
-        // Remove if name list contains "Former Member"
-        if (names && names.includes("Former Member")) continue;
+  		if (names && names.includes("Former Member")) {
+    		console.log(`Removing Former Member: ${idStr}`);
+    		continue;
+  		}
 
-        if (!names) {
- 		 	// Keep them if you want to include unknowns
-  			newRoleData[id] = opData[role][id];
- 		 	continue;
-		}
+  		if (!names) {
+    		console.log(`Unknown ID (keeping): ${idStr}`);
+  		}
 
+  		newRoleData[id] = opData[role][id];
+	  }
 
-        newRoleData[id] = opData[role][id];
-      }
 
       newOpData[role] = newRoleData;
     }
@@ -1059,6 +1060,7 @@ document.getElementById("filter_input").addEventListener("keydown", function(eve
 </script>
 </body>
 </html>
+
 
 
 
