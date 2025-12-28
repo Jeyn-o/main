@@ -52,17 +52,19 @@
     margin-bottom: 10px;
   }
 
-  .day {
-    padding: 8px;
-    text-align: center;
-    cursor: pointer;
-    border-radius: 4px;
-  }
+.day {
+  padding: 8px;
+  text-align: center;
+  border-radius: 4px;
+  cursor: pointer;
+}
 
-  .day.disabled {
-    color: #aaa;
-    cursor: not-allowed;
-  }
+.day.disabled {
+  color: #aaa;
+  cursor: not-allowed;
+  background: none;
+}
+
 
   .day.selected {
     background-color: #007bff;
@@ -214,19 +216,20 @@ function renderCalendar(month, year) {
   for (let i = 0; i < firstDay; i++) calendarEl.appendChild(document.createElement("div"));
 
   for (let d = 1; d <= daysInMonth; d++) {
-    const dayEl = document.createElement("div");
-    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    dayEl.textContent = d;
+      const dayEl = document.createElement("div");
+      const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      dayEl.textContent = d;
+      dayEl.classList.add("day"); // always add day class for grid
 
-    if (!availableDates.includes(dateStr)) {
-      dayEl.classList.add("disabled");
-    } else {
-      dayEl.classList.add("day");
-      dayEl.addEventListener("click", () => handleDayClick(dateStr));
-    }
+      if (!availableDates.includes(dateStr)) {
+        dayEl.classList.add("disabled");
+      } else {
+        dayEl.addEventListener("click", () => handleDayClick(dateStr));
+      }
 
-    calendarEl.appendChild(dayEl);
-  }
+      calendarEl.appendChild(dayEl);
+   }
+
 }
 
 function handleDayClick(dateStr) {
