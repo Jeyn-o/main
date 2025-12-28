@@ -45,6 +45,34 @@
     margin-bottom: 15px;
   }
 
+  .calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 40px);
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  .day {
+    padding: 8px;
+    text-align: center;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .day.disabled {
+    color: #aaa;
+    cursor: not-allowed;
+  }
+
+  .day.selected {
+    background-color: #007bff;
+    color: white;
+  }
+
+  .day.in-range {
+    background-color: #cce5ff;
+  }
+
   button {
     margin-left: 8px;
   }
@@ -55,15 +83,8 @@
 <h2>Armory Observer</h2>
 
 <div class="controls">
-  <label>
-    From:
-    <input type="date" id="fromDate">
-  </label>
-  <label>
-    To:
-    <input type="date" id="toDate">
-  </label>
-  <button id="loadBtn">Load</button>
+  <div id="calendar" class="calendar"></div>
+  <button id="loadBtn">Load Selected Range</button>
 </div>
 
 <hr>
@@ -72,19 +93,17 @@
 
 <script>
 /* ================= CONFIG ================= */
-
-const LOG_BASE =
-  "https://raw.githubusercontent.com/Jeyn-o/Armory_observer/main/logs";
-
-const NAMES_URL =
-  "https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/refs/heads/main/BC_names.JSON";
+const LOG_BASE = "https://raw.githubusercontent.com/Jeyn-o/Armory_observer/main/logs";
+const NAMES_URL = "https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/refs/heads/main/BC_names.JSON";
 
 /* ================= STATE ================= */
-
 let nameMap = {};
+const availableDates = [
+  '2025-12-24','2025-12-25','2025-12-26','2025-12-27' // Example, replace with real dates
+];
+let selectedDates = [];
 
 /* ================= HELPERS ================= */
-
 function utcDateRange(from, to) {
   const days = [];
   const d = new Date(from);
@@ -104,40 +123,27 @@ function fmtTime(ts) {
 
 function getUserName(uid) {
   const names = nameMap[uid];
-  if (!names || names.length === 0) {
-    return { label: uid, former: false, tooltip: "" };
-  }
+  if (!names || names.length === 0) return { label: uid, former: false, tooltip: "" };
 
   const last = names[names.length - 1];
   const isFormer = last === "Former Member";
-  const label = isFormer
-    ? names[names.length - 2] ?? uid
-    : last;
-
-  const tooltip =
-    names.length > 1
-      ? names.join(" → ")
-      : "";
-
+  const label = isFormer ? names[names.length - 2] ?? uid : last;
+  const tooltip = names.length > 1 ? names.join(" → ") : "";
   return { label, former: isFormer, tooltip };
 }
 
 /* ================= FETCH ================= */
-
 async function loadNames() {
   nameMap = await fetch(NAMES_URL).then(r => r.json());
 }
 
 async function loadLogs(from, to) {
   const merged = {};
-
   for (const d of utcDateRange(from, to)) {
     const y = d.getUTCFullYear();
     const m = String(d.getUTCMonth() + 1).padStart(2, "0");
     const day = String(d.getUTCDate()).padStart(2, "0");
-
     const url = `${LOG_BASE}/${y}/${m}/${day}.json`;
-
     try {
       const data = await fetch(url).then(r => {
         if (!r.ok) throw new Error("404");
@@ -154,75 +160,107 @@ async function loadLogs(from, to) {
           }
         }
       }
-    } catch {
-      // missing day → ignore
-    }
+    } catch {}
   }
-
   return merged;
 }
 
 /* ================= RENDER ================= */
-
 function render(data) {
   const out = document.getElementById("output");
   out.innerHTML = "";
 
   for (const uid in data) {
     const name = getUserName(uid);
-
     const userDetails = document.createElement("details");
     const userSummary = document.createElement("summary");
     userSummary.textContent = name.label;
     if (name.former) userSummary.classList.add("former");
     if (name.tooltip) userSummary.title = name.tooltip;
-
     userDetails.appendChild(userSummary);
 
     for (const cat in data[uid]) {
       const catDetails = document.createElement("details");
       catDetails.className = "category";
       catDetails.innerHTML = `<summary>${cat}</summary>`;
-
       for (const item in data[uid][cat]) {
         const entries = data[uid][cat][item];
-        const total = entries.reduce((s, e) => s + e[0], 0);
-
+        const total = entries.reduce((s,e)=>s+e[0],0);
         const itemDetails = document.createElement("details");
         itemDetails.className = "item";
         itemDetails.innerHTML = `<summary>${item} (${total})</summary>`;
-
-        entries.forEach(([amt, ts]) => {
+        entries.forEach(([amt, ts])=>{
           const div = document.createElement("div");
           div.className = "timestamp";
           div.innerHTML = `${amt} × ${fmtTime(ts)}`;
           itemDetails.appendChild(div);
         });
-
         catDetails.appendChild(itemDetails);
       }
-
       userDetails.appendChild(catDetails);
     }
-
     out.appendChild(userDetails);
   }
 }
 
+/* ================= CALENDAR ================= */
+const calendarEl = document.getElementById("calendar");
+
+function renderCalendar(month, year) {
+  calendarEl.innerHTML = "";
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  for (let i = 0; i < firstDay; i++) calendarEl.appendChild(document.createElement("div"));
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dayEl = document.createElement("div");
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    dayEl.textContent = d;
+
+    if (!availableDates.includes(dateStr)) {
+      dayEl.classList.add("disabled");
+    } else {
+      dayEl.classList.add("day");
+      dayEl.addEventListener("click", () => handleDayClick(dateStr));
+    }
+
+    calendarEl.appendChild(dayEl);
+  }
+}
+
+function handleDayClick(dateStr) {
+  if (selectedDates.length === 0 || selectedDates.length === 2) selectedDates = [dateStr];
+  else selectedDates.push(dateStr);
+  selectedDates.sort();
+  updateSelection();
+}
+
+function updateSelection() {
+  document.querySelectorAll('.day').forEach(el => el.classList.remove('selected','in-range'));
+  const start = selectedDates[0];
+  const end = selectedDates[1] || start;
+  document.querySelectorAll('.day').forEach(el=>{
+    const dayNum = el.textContent;
+    const month = new Date().getMonth();
+    const year = new Date().getFullYear();
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}`;
+    if (dateStr === start || dateStr === end) el.classList.add('selected');
+    if (dateStr > start && dateStr < end) el.classList.add('in-range');
+  });
+}
+
 /* ================= BOOT ================= */
-
 document.getElementById("loadBtn").onclick = async () => {
-  const fromVal = document.getElementById("fromDate").value;
-  const toVal = document.getElementById("toDate").value;
-  if (!fromVal || !toVal) return;
-
-  const from = new Date(fromVal);
-  const to = new Date(toVal);
-
+  if (selectedDates.length === 0) return;
+  const from = new Date(selectedDates[0]);
+  const to = new Date(selectedDates[1] || selectedDates[0]);
   const data = await loadLogs(from, to);
   render(data);
 };
 
+const today = new Date();
+renderCalendar(today.getMonth(), today.getFullYear());
 loadNames();
 </script>
 
