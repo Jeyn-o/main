@@ -3,43 +3,67 @@
 <head>
 <meta charset="UTF-8">
 <title>Armory Observer</title>
+
 <style>
-  body { font-family: system-ui, sans-serif; margin: 20px; }
-  h2 { margin-bottom: 10px; }
-
-  /* Calendar bubble */
-  .calendar-bubble {
-    position: absolute;
-    background: #fff;
-    border: 1px solid #ccc;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-    padding: 10px;
-    display: none;
-    z-index: 1000;
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 20px;
   }
 
-  .calendar-header { display: flex; gap: 5px; margin-bottom: 5px; }
-  .calendar-days { display: grid; grid-template-columns: repeat(7, 30px); gap: 2px; }
-  .calendar-days div {
-    text-align: center;
-    padding: 5px;
+  h2 {
+    margin-bottom: 10px;
+  }
+
+  details {
+    margin-left: 16px;
+  }
+
+  summary {
     cursor: pointer;
-    user-select: none;
   }
-  .calendar-days div.disabled { color: #ccc; cursor: default; }
-  .calendar-days div.selected { background: #2196F3; color: #fff; border-radius: 3px; }
-  .calendar-days div.inrange { background: #90CAF9; color: #000; border-radius: 3px; }
 
-  details { margin-left: 16px; }
-  summary { cursor: pointer; }
-  .former { color: #999; font-style: italic; }
-  .category { margin-top: 6px; }
-  .item { margin-left: 16px; }
-  .timestamp { margin-left: 32px; color: #555; font-size: 0.9em; }
-  .controls { margin-bottom: 15px; }
-  button { margin-left: 8px; }
+  .former {
+    color: #999;
+    font-style: italic;
+  }
 
-  #selectionText { margin-top: 5px; font-size: 0.95em; }
+  .category {
+    margin-top: 6px;
+  }
+
+  .item {
+    margin-left: 16px;
+  }
+
+  .timestamp {
+    margin-left: 32px;
+    color: #555;
+    font-size: 0.9em;
+  }
+
+  .controls {
+    margin-bottom: 15px;
+  }
+
+  button {
+    margin-left: 8px;
+  }
+
+  #calendarPopup {
+    display:none;
+    position:absolute;
+    border:1px solid #ccc;
+    background:#fff;
+    padding:10px;
+    z-index:100;
+  }
+
+  #calendarGrid div {
+    text-align:center;
+    line-height:28px;
+    height:28px;
+    width:28px;
+  }
 </style>
 </head>
 <body>
@@ -48,51 +72,40 @@
 
 <div class="controls">
   <button id="openCalendar">Select Date(s)</button>
-  <button id="loadBtn">Load</button>
-  <div id="selectionText"></div>
+  <span id="selectionInfo"></span>
 </div>
 
-<div id="calendar" class="calendar-bubble"></div>
+<div id="calendarPopup">
+  <div style="margin-bottom:5px;">
+    Year:
+    <select id="yearSelect"></select>
+    Month:
+    <select id="monthSelect"></select>
+  </div>
+  <div id="calendarGrid" style="display:grid; grid-template-columns: repeat(7, 30px); gap:2px;"></div>
+  <button id="closeCalendar" style="margin-top:5px;">Close</button>
+</div>
+
 <hr>
 <div id="output"></div>
 
 <script>
 /* ================= CONFIG ================= */
-const LOG_BASE = "https://raw.githubusercontent.com/Jeyn-o/Armory_observer/main/logs";
-const NAMES_URL = "https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/refs/heads/main/BC_names.JSON";
+
+const LOG_BASE =
+  "https://raw.githubusercontent.com/Jeyn-o/Armory_observer/main/logs";
+
+const NAMES_URL =
+  "https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/refs/heads/main/BC_names.JSON";
 
 /* ================= STATE ================= */
+
 let nameMap = {};
-let availableDates = {}; // { "2025": { "12": [27] } } dynamically load available dates
 let startDate = null;
 let endDate = null;
+let allAvailableDates = []; // fill with Date objects of available logs
 
 /* ================= HELPERS ================= */
-function parseAvailableDates() {
-  // Hardcode available dates here for now or dynamically fetch from logs listing
-  availableDates = { "2025": { "12": [27] } };
-}
-
-function daysInMonth(year, month) {
-  return new Date(year, month, 0).getUTCDate();
-}
-
-function fmtTime(ts) {
-  const d = new Date(ts * 1000);
-  const hhmm = d.toISOString().slice(11, 16);
-  const ddmm = d.toISOString().slice(8, 10) + "/" + d.toISOString().slice(5, 7);
-  return `${hhmm}<br>${ddmm}`;
-}
-
-function getUserName(uid) {
-  const names = nameMap[uid];
-  if (!names || names.length === 0) return { label: uid, former: false, tooltip: "" };
-  const last = names[names.length - 1];
-  const isFormer = last === "Former Member";
-  const label = isFormer ? (names[names.length - 2] ?? uid) : last;
-  const tooltip = names.length > 1 ? names.join(" → ") : "";
-  return { label, former: isFormer, tooltip };
-}
 
 function utcDateRange(from, to) {
   const days = [];
@@ -104,20 +117,61 @@ function utcDateRange(from, to) {
   return days;
 }
 
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  const hhmm = d.toISOString().slice(11, 16);
+  const ddmm = d.toISOString().slice(8, 10) + "/" + d.toISOString().slice(5, 7);
+  return `${hhmm}<br>${ddmm}`;
+}
+
+function getUserName(uid) {
+  const names = nameMap[uid];
+  if (!names || names.length === 0) {
+    return { label: uid, former: false, tooltip: "" };
+  }
+
+  const last = names[names.length - 1];
+  const isFormer = last === "Former Member";
+  const label = isFormer
+    ? names[names.length - 2] ?? uid
+    : last;
+
+  const tooltip =
+    names.length > 1
+      ? names.join(" → ")
+      : "";
+
+  return { label, former: isFormer, tooltip };
+}
+
 /* ================= FETCH ================= */
+
 async function loadNames() {
   nameMap = await fetch(NAMES_URL).then(r => r.json());
 }
 
+// For demo, fill allAvailableDates with available log dates
+async function loadAvailableDates() {
+  // Example: we have only 27 Dec 2025
+  allAvailableDates = [new Date(Date.UTC(2025,11,27))];
+}
+
 async function loadLogs(from, to) {
   const merged = {};
+
   for (const d of utcDateRange(from, to)) {
     const y = d.getUTCFullYear();
     const m = String(d.getUTCMonth() + 1).padStart(2, "0");
     const day = String(d.getUTCDate()).padStart(2, "0");
+
     const url = `${LOG_BASE}/${y}/${m}/${day}.json`;
+
     try {
-      const data = await fetch(url).then(r => { if(!r.ok) throw new Error(); return r.json(); });
+      const data = await fetch(url).then(r => {
+        if (!r.ok) throw new Error("404");
+        return r.json();
+      });
+
       for (const uid in data) {
         merged[uid] ??= {};
         for (const cat in data[uid]) {
@@ -128,137 +182,183 @@ async function loadLogs(from, to) {
           }
         }
       }
-    } catch {}
+    } catch {
+      // missing day → ignore
+    }
   }
+
   return merged;
 }
 
 /* ================= RENDER ================= */
+
 function render(data) {
   const out = document.getElementById("output");
   out.innerHTML = "";
+
   for (const uid in data) {
     const name = getUserName(uid);
+
     const userDetails = document.createElement("details");
     const userSummary = document.createElement("summary");
     userSummary.textContent = name.label;
     if (name.former) userSummary.classList.add("former");
     if (name.tooltip) userSummary.title = name.tooltip;
+
     userDetails.appendChild(userSummary);
+
     for (const cat in data[uid]) {
       const catDetails = document.createElement("details");
       catDetails.className = "category";
       catDetails.innerHTML = `<summary>${cat}</summary>`;
+
       for (const item in data[uid][cat]) {
         const entries = data[uid][cat][item];
-        const total = entries.reduce((s,e)=>s+e[0],0);
+        const total = entries.reduce((s, e) => s + e[0], 0);
+
         const itemDetails = document.createElement("details");
         itemDetails.className = "item";
         itemDetails.innerHTML = `<summary>${item} (${total})</summary>`;
+
         entries.forEach(([amt, ts]) => {
           const div = document.createElement("div");
-          div.className="timestamp";
-          div.innerHTML=`${amt} × ${fmtTime(ts)}`;
+          div.className = "timestamp";
+          div.innerHTML = `${amt} × ${fmtTime(ts)}`;
           itemDetails.appendChild(div);
         });
+
         catDetails.appendChild(itemDetails);
       }
+
       userDetails.appendChild(catDetails);
     }
+
     out.appendChild(userDetails);
   }
 }
 
 /* ================= CALENDAR ================= */
-const calendar = document.getElementById("calendar");
 
-function openCalendar(btn) {
-  calendar.style.display = "block";
-  const rect = btn.getBoundingClientRect();
-  calendar.style.top = (rect.bottom + window.scrollY) + "px";
-  calendar.style.left = rect.left + "px";
-  renderCalendar();
+const calendarBtn = document.getElementById("openCalendar");
+const calendar = document.getElementById("calendarPopup");
+const calendarGrid = document.getElementById("calendarGrid");
+const monthSelect = document.getElementById("monthSelect");
+const yearSelect = document.getElementById("yearSelect");
+const closeBtn = document.getElementById("closeCalendar");
+const selectionInfo = document.getElementById("selectionInfo");
+
+function populateYearMonthSelects(availableDates) {
+  const years = [...new Set(availableDates.map(d => d.getUTCFullYear()))].sort((a,b)=>a-b);
+  yearSelect.innerHTML = "";
+  years.forEach(y => {
+    const opt = document.createElement("option");
+    opt.value = y; opt.textContent = y;
+    yearSelect.appendChild(opt);
+  });
+  populateMonths(availableDates, years[0]);
 }
 
-function closeCalendar() { calendar.style.display = "none"; }
-
-document.getElementById("openCalendar").onclick = (e)=>{openCalendar(e.target);}
-document.addEventListener("click", e=>{if(!calendar.contains(e.target) && e.target.id!=="openCalendar") closeCalendar();});
-
-function renderCalendar() {
-  const today = new Date();
-  const years = Object.keys(availableDates).sort();
-  const yearSelect = document.createElement("select");
-  years.forEach(y=>{
+function populateMonths(availableDates, year) {
+  const months = [...new Set(availableDates.filter(d=>d.getUTCFullYear()===year).map(d=>d.getUTCMonth()+1))].sort((a,b)=>a-b);
+  monthSelect.innerHTML = "";
+  for (let i=1;i<=12;i++) {
     const opt = document.createElement("option");
-    opt.value = y; opt.textContent = y; yearSelect.appendChild(opt);
-  });
-
-  const months = Array.from({length:12},(_,i)=>i+1);
-  const monthSelect = document.createElement("select");
-  const selectedYear = yearSelect.value;
-  months.forEach(m=>{
-    const opt = document.createElement("option");
-    opt.value = m; opt.textContent = m.toString().padStart(2,'0');
-    if(!availableDates[selectedYear] || !availableDates[selectedYear][String(m).padStart(2,'0')]) opt.disabled=true;
+    opt.value = i; opt.textContent = i;
+    if (!months.includes(i)) opt.disabled = true;
     monthSelect.appendChild(opt);
-  });
+  }
+  monthSelect.value = months[0] ?? 1;
+}
 
-  yearSelect.onchange = ()=>renderCalendar();
-  monthSelect.onchange = ()=>renderCalendar();
+function drawCalendar(availableDates) {
+  calendarGrid.innerHTML = "";
+  const y = parseInt(yearSelect.value);
+  const m = parseInt(monthSelect.value) - 1;
+  const firstDay = new Date(Date.UTC(y,m,1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y,m+1,0)).getUTCDate();
+  const availableSet = new Set(availableDates.map(d => `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`));
 
-  // Days grid
-  const daysGrid = document.createElement("div"); daysGrid.className="calendar-days";
-  const selectedYearV = yearSelect.value;
-  const selectedMonthV = String(monthSelect.value).padStart(2,'0');
-  const numDays = daysInMonth(selectedYearV, selectedMonthV);
-  const validDays = (availableDates[selectedYearV]?.[selectedMonthV] ?? []);
-  for(let d=1;d<=numDays;d++){
+  for (let i=0;i<firstDay;i++) calendarGrid.appendChild(document.createElement("div"));
+
+  for (let d=1; d<=daysInMonth; d++) {
     const div = document.createElement("div");
     div.textContent = d;
-    if(!validDays.includes(d)) div.classList.add("disabled");
-    const divDate = new Date(selectedYearV, selectedMonthV-1,d);
-    if(startDate && endDate && divDate>=startDate && divDate<=endDate) div.classList.add("selected");
-    else if(startDate && !endDate && divDate.getTime()===startDate.getTime()) div.classList.add("selected");
-    div.onclick=()=>{if(div.classList.contains("disabled")) return; handleDateClick(divDate);}
-    daysGrid.appendChild(div);
+    const dateKey = `${y}-${m}-${d}`;
+    if (!availableSet.has(dateKey)) div.style.color="#ccc";
+    else div.style.cursor="pointer";
+
+    div.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      if (!availableSet.has(dateKey)) return;
+      const clickedDate = new Date(Date.UTC(y,m,d));
+      if (!startDate || (startDate && endDate)) { startDate = clickedDate; endDate = null; }
+      else { if (clickedDate<startDate) { endDate=startDate; startDate=clickedDate; } else endDate=clickedDate; }
+      updateSelectionInfo();
+      highlightRange();
+    });
+
+    calendarGrid.appendChild(div);
   }
 
-  calendar.innerHTML=""; 
-  const header = document.createElement("div"); header.className="calendar-header";
-  header.appendChild(yearSelect); header.appendChild(monthSelect);
-  calendar.appendChild(header);
-  calendar.appendChild(daysGrid);
-  updateSelectionText();
+  highlightRange();
 }
 
-function handleDateClick(date) {
-  if(!startDate || (startDate && endDate)) { startDate=date; endDate=null; }
-  else { 
-    if(date<startDate){ endDate=startDate; startDate=date; } 
-    else endDate=date; 
-  }
-  renderCalendar();
+function highlightRange() {
+  const y = parseInt(yearSelect.value);
+  const m = parseInt(monthSelect.value) -1;
+  const divs = Array.from(calendarGrid.children);
+  divs.forEach((div)=>{
+    if (!div.textContent) return;
+    const day = parseInt(div.textContent);
+    const divDate = new Date(Date.UTC(y,m,day));
+    if (startDate && endDate && divDate>=startDate && divDate<=endDate) div.style.background="#add8e6";
+    else if (startDate && !endDate && divDate.getTime()===startDate.getTime()) div.style.background="#add8e6";
+    else div.style.background="";
+  });
 }
 
-function updateSelectionText() {
-  const txt = document.getElementById("selectionText");
-  let str = "";
-  if(startDate) str+=`Selected from: ${startDate.getUTCDate().toString().padStart(2,'0')}.${(startDate.getUTCMonth()+1).toString().padStart(2,'0')}.${startDate.getUTCFullYear()}`;
-  if(endDate) str+=`<br>Selected to: ${endDate.getUTCDate().toString().padStart(2,'0')}.${(endDate.getUTCMonth()+1).toString().padStart(2,'0')}.${endDate.getUTCFullYear()}`;
-  txt.innerHTML=str;
+function updateSelectionInfo() {
+  let text = "";
+  if (startDate) text += `Selected from: ${String(startDate.getUTCDate()).padStart(2,'0')}.${String(startDate.getUTCMonth()+1).padStart(2,'0')}.${startDate.getUTCFullYear()}`;
+  if (endDate) text += ` | Selected to: ${String(endDate.getUTCDate()).padStart(2,'0')}.${String(endDate.getUTCMonth()+1).padStart(2,'0')}.${endDate.getUTCFullYear()}`;
+  selectionInfo.innerHTML = text;
 }
 
-/* ================= BOOT ================= */
-document.getElementById("loadBtn").onclick = async () => {
-  if(!startDate) return;
-  const from=startDate; const to=endDate??startDate;
-  const data = await loadLogs(from,to);
+calendarBtn.addEventListener("click", e=>{
+  e.stopPropagation();
+  calendar.style.display="block";
+  calendar.style.left = (calendarBtn.offsetLeft) + "px";
+  calendar.style.top = (calendarBtn.offsetTop + calendarBtn.offsetHeight + 5) + "px";
+  drawCalendar(allAvailableDates);
+});
+
+closeBtn.addEventListener("click", e=>{
+  e.stopPropagation();
+  calendar.style.display="none";
+});
+
+yearSelect.addEventListener("change", ()=>drawCalendar(allAvailableDates));
+monthSelect.addEventListener("change", ()=>drawCalendar(allAvailableDates));
+
+document.addEventListener("click", e=>{
+  if(!calendar.contains(e.target) && e.target!==calendarBtn) calendar.style.display="none";
+});
+
+/* ================= LOAD & BOOT ================= */
+
+async function boot() {
+  await loadNames();
+  await loadAvailableDates();
+  populateYearMonthSelects(allAvailableDates);
+}
+
+boot();
+
+document.getElementById("loadBtn")?.addEventListener("click", async () => {
+  if (!startDate) return;
+  const data = await loadLogs(startDate, endDate || startDate);
   render(data);
-};
-
-parseAvailableDates();
-loadNames();
+});
 </script>
 
 </body>
