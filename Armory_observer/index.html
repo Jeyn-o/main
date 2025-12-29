@@ -46,14 +46,14 @@ button { margin-left:8px; }
 /* ================= CONFIG ================= */
 const LOG_BASE = "https://raw.githubusercontent.com/Jeyn-o/Armory_observer/main/logs";
 const NAMES_URL = "https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/refs/heads/main/BC_names.JSON";
+const GH_API_BASE = "https://api.github.com/repos/Jeyn-o/Armory_observer/contents";
 
 /* ================= STATE ================= */
 let nameMap = {};
 let startDate = null, endDate = null;
 let currentYear, currentMonth;
 
-// Example available dates
-const availableDates = new Set(["2025-12-27"]);
+const availableDates = new Set();
 
 const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -84,12 +84,16 @@ function getUserName(uid){
 function makeUTCDate(y,m,d){ return new Date(Date.UTC(y,m,d)); }
 
 /* ================= FETCH ================= */
-async function loadNames(){ nameMap=await fetch(NAMES_URL).then(r=>r.json()); }
+async function loadNames(){
+  nameMap = await fetch(NAMES_URL).then(r=>r.json());
+}
 
 async function loadLogs(from,to){
   const merged={};
   for(const d of utcDateRange(from,to)){
-    const y=d.getUTCFullYear(), m=String(d.getUTCMonth()+1).padStart(2,"0"), day=String(d.getUTCDate()).padStart(2,"0");
+    const y=d.getUTCFullYear();
+    const m=String(d.getUTCMonth()+1).padStart(2,"0");
+    const day=String(d.getUTCDate()).padStart(2,"0");
     const url=`${LOG_BASE}/${y}/${m}/${day}.json`;
     try{
       const data=await fetch(url).then(r=>{if(!r.ok)throw new Error("404"); return r.json();});
@@ -98,13 +102,45 @@ async function loadLogs(from,to){
         for(const cat in data[uid]){
           merged[uid][cat]??={};
           for(const item in data[uid][cat]){
-            merged[uid][cat][item]??=[]; merged[uid][cat][item].push(...data[uid][cat][item]);
+            merged[uid][cat][item]??=[];
+            merged[uid][cat][item].push(...data[uid][cat][item]);
           }
         }
       }
     }catch{}
   }
   return merged;
+}
+
+/* ================= GITHUB DATE DETECTION ================= */
+async function fetchGitHubFolder(path){
+  const res = await fetch(`${GH_API_BASE}/${path}`);
+  if(!res.ok) throw new Error("GitHub fetch failed");
+  return res.json();
+}
+
+async function detectAvailableDates(){
+  const years = await fetchGitHubFolder("logs");
+
+  for(const year of years){
+    if(year.type !== "dir") continue;
+
+    const months = await fetchGitHubFolder(`logs/${year.name}`);
+
+    for(const month of months){
+      if(month.type !== "dir") continue;
+
+      const files = await fetchGitHubFolder(`logs/${year.name}/${month.name}`);
+
+      for(const file of files){
+        if(file.type === "file" && file.name.endsWith(".json")){
+          const day = file.name.replace(".json","");
+          const iso = `${year.name}-${month.name}-${day}`;
+          availableDates.add(iso);
+        }
+      }
+    }
+  }
 }
 
 /* ================= RENDER ================= */
@@ -119,21 +155,26 @@ function render(data){
     if(name.former) userSummary.classList.add("former");
     if(name.tooltip) userSummary.title=name.tooltip;
     userDetails.appendChild(userSummary);
+
     for(const cat in data[uid]){
       const catDetails=document.createElement("details");
       catDetails.className="category";
       catDetails.innerHTML=`<summary>${cat}</summary>`;
+
       for(const item in data[uid][cat]){
         const entries=data[uid][cat][item];
         const total=entries.reduce((s,e)=>s+e[0],0);
         const itemDetails=document.createElement("details");
         itemDetails.className="item";
         itemDetails.innerHTML=`<summary>${item} (${total})</summary>`;
+
         entries.forEach(([amt,ts])=>{
           const div=document.createElement("div");
-          div.className="timestamp"; div.innerHTML=`${amt} × ${fmtTime(ts)}`;
+          div.className="timestamp";
+          div.innerHTML=`${amt} × ${fmtTime(ts)}`;
           itemDetails.appendChild(div);
         });
+
         catDetails.appendChild(itemDetails);
       }
       userDetails.appendChild(catDetails);
@@ -157,10 +198,11 @@ monthSelect.onchange=()=>buildCalendar(yearSelect.value,monthSelect.value);
 yearSelect.onchange=()=>buildCalendar(yearSelect.value,monthSelect.value);
 
 function buildMonthSelect(){
-  const years=Array.from(new Set(Array.from(availableDates).map(d=>d.split("-")[0]))).sort((a,b)=>b-a);
+  const years=Array.from(new Set([...availableDates].map(d=>d.split("-")[0]))).sort((a,b)=>b-a);
   yearSelect.innerHTML="";
   years.forEach(y=>{
-    const opt=document.createElement("option"); opt.value=y; opt.textContent=y;
+    const opt=document.createElement("option");
+    opt.value=y; opt.textContent=y;
     yearSelect.appendChild(opt);
   });
 }
@@ -170,60 +212,71 @@ function buildCalendar(year,month){
   calendarGrid.innerHTML="";
   const firstDay=new Date(Date.UTC(currentYear,currentMonth,1)).getUTCDay();
   const daysInMonth=new Date(Date.UTC(currentYear,currentMonth+1,0)).getUTCDate();
+
   for(let i=0;i<firstDay;i++) calendarGrid.appendChild(document.createElement("div"));
+
   for(let d=1;d<=daysInMonth;d++){
-    const div=document.createElement("div"); div.textContent=d; div.className="calendar-day";
+    const div=document.createElement("div");
+    div.textContent=d;
+    div.className="calendar-day";
     const iso=`${currentYear}-${String(currentMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+
     if(availableDates.has(iso)){
       div.classList.add("available");
       div.onclick=()=>{
-        const clickedDate=makeUTCDate(currentYear,currentMonth,d);
-        if(!startDate||(startDate&&endDate)){ startDate=clickedDate; endDate=null; }
-        else{ if(clickedDate>=startDate) endDate=clickedDate; else { endDate=startDate; startDate=clickedDate; } }
-        updateCalendarHighlight(); updateSelectedText();
+        const clicked=makeUTCDate(currentYear,currentMonth,d);
+        if(!startDate || endDate){
+          startDate=clicked; endDate=null;
+        }else{
+          if(clicked>=startDate) endDate=clicked;
+          else { endDate=startDate; startDate=clicked; }
+        }
+        updateCalendarHighlight();
+        updateSelectedText();
       };
-    }else{ div.classList.add("unavailable"); }
+    }else{
+      div.classList.add("unavailable");
+    }
     calendarGrid.appendChild(div);
   }
   updateCalendarHighlight();
 }
 
 function updateCalendarHighlight(){
-  document.querySelectorAll(".calendar-day").forEach(div=>div.style.backgroundColor="");
-  if(startDate){
-    document.querySelectorAll(".calendar-day.available").forEach(div=>{
-      const d=Number(div.textContent);
-      const dayDate=makeUTCDate(currentYear,currentMonth,d);
-      if(endDate){
-        if(dayDate>=startDate && dayDate<=endDate) div.style.backgroundColor="#a0c4ff";
-      }else{
-        if(dayDate.getTime()===startDate.getTime()) div.style.backgroundColor="#a0c4ff";
-      }
-    });
-  }
+  document.querySelectorAll(".calendar-day").forEach(d=>d.style.backgroundColor="");
+  if(!startDate) return;
+
+  document.querySelectorAll(".calendar-day.available").forEach(div=>{
+    const day=Number(div.textContent);
+    const date=makeUTCDate(currentYear,currentMonth,day);
+    if(endDate){
+      if(date>=startDate && date<=endDate) div.style.backgroundColor="#a0c4ff";
+    }else{
+      if(date.getTime()===startDate.getTime()) div.style.backgroundColor="#a0c4ff";
+    }
+  });
 }
 
 function updateSelectedText(){
-  if(startDate){
-    let txt=`Selected from: ${String(startDate.getUTCDate()).padStart(2,"0")}.${String(startDate.getUTCMonth()+1).padStart(2,"0")}.${startDate.getUTCFullYear()}`;
-    if(endDate) txt+=` | Selected to: ${String(endDate.getUTCDate()).padStart(2,"0")}.${String(endDate.getUTCMonth()+1).padStart(2,"0")}.${endDate.getUTCFullYear()}`;
-    selectedRangeText.textContent=txt;
-  }else selectedRangeText.textContent="";
+  if(!startDate){ selectedRangeText.textContent=""; return; }
+  let txt=`Selected from: ${String(startDate.getUTCDate()).padStart(2,"0")}.${String(startDate.getUTCMonth()+1).padStart(2,"0")}.${startDate.getUTCFullYear()}`;
+  if(endDate) txt+=` | Selected to: ${String(endDate.getUTCDate()).padStart(2,"0")}.${String(endDate.getUTCMonth()+1).padStart(2,"0")}.${endDate.getUTCFullYear()}`;
+  selectedRangeText.textContent=txt;
 }
 
 function initCalendar(){
   buildMonthSelect();
   monthSelect.innerHTML="";
   monthNames.forEach((name,i)=>{
-    const opt=document.createElement("option"); opt.value=i; opt.textContent=name;
+    const opt=document.createElement("option");
+    opt.value=i; opt.textContent=name;
     monthSelect.appendChild(opt);
   });
-  const firstYear=yearSelect.options[0].value; yearSelect.value=firstYear;
+  const firstYear=yearSelect.options[0].value;
+  yearSelect.value=firstYear;
   monthSelect.value=11;
   buildCalendar(firstYear,11);
 }
-
-initCalendar();
 
 /* ================= LOAD BUTTON ================= */
 document.getElementById("loadBtn").onclick=async()=>{
@@ -235,7 +288,13 @@ document.getElementById("loadBtn").onclick=async()=>{
   render(data);
 };
 
-loadNames();
+/* ================= INIT ================= */
+(async()=>{
+  await loadNames();
+  await detectAvailableDates();
+  initCalendar();
+})();
 </script>
+
 </body>
 </html>
