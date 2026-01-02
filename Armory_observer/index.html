@@ -251,7 +251,104 @@ function render(data){
 }
 
 /* ================= CALENDAR ================= */
-/* unchanged from your version */
+const calendarPopup=document.getElementById("calendarPopup");
+const calendarGrid=document.getElementById("calendarGrid");
+const monthSelect=document.getElementById("monthSelect");
+const yearSelect=document.getElementById("yearSelect");
+const selectedRangeText=document.getElementById("selectedRangeText");
+
+document.getElementById("openCalendarBtn").onclick=()=>{
+  calendarPopup.style.display="block";
+};
+
+monthSelect.onchange=()=>buildCalendar(yearSelect.value,monthSelect.value);
+yearSelect.onchange=()=>buildCalendar(yearSelect.value,monthSelect.value);
+
+function buildMonthSelect(){
+  const years=Array.from(new Set([...availableDates].map(d=>d.split("-")[0]))).sort((a,b)=>b-a);
+  yearSelect.innerHTML="";
+  years.forEach(y=>{
+    const opt=document.createElement("option");
+    opt.value=y; opt.textContent=y;
+    yearSelect.appendChild(opt);
+  });
+}
+
+function buildCalendar(year,month){
+  currentYear=Number(year); currentMonth=Number(month);
+  calendarGrid.innerHTML="";
+  const firstDay=new Date(Date.UTC(currentYear,currentMonth,1)).getUTCDay();
+  const daysInMonth=new Date(Date.UTC(currentYear,currentMonth+1,0)).getUTCDate();
+
+  for(let i=0;i<firstDay;i++) calendarGrid.appendChild(document.createElement("div"));
+
+  for(let d=1;d<=daysInMonth;d++){
+    const div=document.createElement("div");
+    div.textContent=d;
+    div.className="calendar-day";
+
+    const iso=`${currentYear}-${String(currentMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const monthKey=`${currentYear}-${String(currentMonth+1).padStart(2,"0")}`;
+
+    if(availableDates.has(iso) || availableMonths.has(monthKey)){
+      div.classList.add("available");
+      div.onclick=()=>{
+        const clicked=makeUTCDate(currentYear,currentMonth,d);
+        if(!startDate || endDate){
+          startDate=clicked; endDate=null;
+        }else{
+          if(clicked>=startDate) endDate=clicked;
+          else{ endDate=startDate; startDate=clicked; }
+        }
+        updateCalendarHighlight();
+        updateSelectedText();
+      };
+    }else{
+      div.classList.add("unavailable");
+    }
+    calendarGrid.appendChild(div);
+  }
+  updateCalendarHighlight();
+}
+
+function updateCalendarHighlight(){
+  document.querySelectorAll(".calendar-day").forEach(d=>d.style.backgroundColor="");
+  if(!startDate) return;
+
+  document.querySelectorAll(".calendar-day.available").forEach(div=>{
+    const day=Number(div.textContent);
+    const date=makeUTCDate(currentYear,currentMonth,day);
+    if(endDate){
+      if(date>=startDate && date<=endDate) div.style.backgroundColor="#a0c4ff";
+    }else{
+      if(date.getTime()===startDate.getTime()) div.style.backgroundColor="#a0c4ff";
+    }
+  });
+}
+
+function updateSelectedText(){
+  if(!startDate){ selectedRangeText.textContent=""; return; }
+  let txt=`Selected from: ${String(startDate.getUTCDate()).padStart(2,"0")}.${String(startDate.getUTCMonth()+1).padStart(2,"0")}.${startDate.getUTCFullYear()}`;
+  if(endDate){
+    txt+=` | Selected to: ${String(endDate.getUTCDate()).padStart(2,"0")}.${String(endDate.getUTCMonth()+1).padStart(2,"0")}.${endDate.getUTCFullYear()}`;
+  }
+  selectedRangeText.textContent=txt;
+}
+
+function initCalendar(){
+  buildMonthSelect();
+  monthSelect.innerHTML="";
+  monthNames.forEach((name,i)=>{
+    const opt=document.createElement("option");
+    opt.value=i; opt.textContent=name;
+    monthSelect.appendChild(opt);
+  });
+  const firstYear=yearSelect.options[0].value;
+  yearSelect.value=firstYear;
+  monthSelect.value=11;
+  buildCalendar(firstYear,11);
+}
+
 
 /* ================= LOAD BUTTON ================= */
 document.getElementById("loadBtn").onclick=async()=>{
