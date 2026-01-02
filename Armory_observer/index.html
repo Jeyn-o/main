@@ -220,48 +220,85 @@ function createCalendar(container, prefix){
   const grid2 = document.createElement("div"); grid2.className="calendar-grid";
   container.appendChild(grid1); container.appendChild(grid2);
 
+  // Local state for this calendar instance
+  let localStartDate = null;
+  let localEndDate = null;
+
   function buildCalendarGrid(year, month, grid){
     grid.innerHTML="";
     const firstDay = new Date(Date.UTC(year, month,1)).getUTCDay();
     const daysInMonth = new Date(Date.UTC(year,month+1,0)).getUTCDate();
     for(let i=0;i<firstDay;i++) grid.appendChild(document.createElement("div"));
+
     for(let d=1; d<=daysInMonth; d++){
       const div=document.createElement("div");
       div.textContent=d; div.className="calendar-day";
       const iso=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
       const monthKey = `${year}-${String(month+1).padStart(2,"0")}`;
+
       if(availableDates.has(iso) || availableMonths.has(monthKey)){
         div.classList.add("available");
-        div.onclick=()=>{ const clicked=makeUTCDate(year,month,d); if(!startDate || endDate){ startDate=clicked; endDate=null;} else{ if(clicked>=startDate) endDate=clicked; else{ endDate=startDate; startDate=clicked; } } updateCalendarHighlight(); updateSelectedText();}
+        div.onclick=()=>{
+          const clicked=makeUTCDate(year,month,d);
+          console.log(`[${prefix}] Clicked date:`, clicked.toISOString());
+
+          if(!localStartDate || localEndDate){
+            localStartDate=clicked; localEndDate=null;
+          } else {
+            if(clicked>=localStartDate) localEndDate=clicked;
+            else { localEndDate=localStartDate; localStartDate=clicked; }
+          }
+
+          updateCalendarHighlight();
+          updateSelectedText();
+        }
       } else div.classList.add("unavailable");
+
       grid.appendChild(div);
     }
   }
 
   function updateCalendarHighlight(){
+    console.log(`[${prefix}] Updating highlight`);
     container.querySelectorAll(".calendar-day").forEach(d=>d.style.backgroundColor="");
-    if(!startDate) return;
+
+    if(!localStartDate) return;
+
     container.querySelectorAll(".calendar-day.available").forEach(div=>{
-      const day=Number(div.textContent);
-      const date=makeUTCDate(currentYear1||currentYear2, currentMonth1||currentMonth2, day);
-      if(endDate){ if(date>=startDate && date<=endDate) div.style.backgroundColor="#a0c4ff";}
-      else if(date.getTime()===startDate.getTime()) div.style.backgroundColor="#a0c4ff";
+      const day = Number(div.textContent);
+      // Determine year/month from parent grid
+      const gridIndex = div.parentNode === grid1 ? 1 : 2;
+      const year = gridIndex ===1 ? Number(yearSelect1.value) : Number(yearSelect2.value);
+      const month = gridIndex ===1 ? Number(monthSelect1.value) : Number(monthSelect2.value);
+      const date = makeUTCDate(year, month, day);
+
+      if(localEndDate){
+        if(date >= localStartDate && date <= localEndDate) div.style.backgroundColor="#a0c4ff";
+      } else if(date.getTime()===localStartDate.getTime()) div.style.backgroundColor="#a0c4ff";
     });
   }
 
-  monthSelect1.onchange = ()=>{ currentYear1=Number(yearSelect1.value); currentMonth1=Number(monthSelect1.value); buildCalendarGrid(currentYear1,currentMonth1,grid1);}
-  yearSelect1.onchange = ()=>{ currentYear1=Number(yearSelect1.value); currentMonth1=Number(monthSelect1.value); buildCalendarGrid(currentYear1,currentMonth1,grid1);}
-  monthSelect2.onchange = ()=>{ currentYear2=Number(yearSelect2.value); currentMonth2=Number(monthSelect2.value); buildCalendarGrid(currentYear2,currentMonth2,grid2);}
-  yearSelect2.onchange = ()=>{ currentYear2=Number(yearSelect2.value); currentMonth2=Number(monthSelect2.value); buildCalendarGrid(currentYear2,currentMonth2,grid2);}
+  function updateSelectedText(){
+    if(!localStartDate){ selectedRangeText.textContent=""; return; }
+    let txt = `[${prefix}] Selected from: ${String(localStartDate.getUTCDate()).padStart(2,"0")}.${String(localStartDate.getUTCMonth()+1).padStart(2,"0")}.${localStartDate.getUTCFullYear()}`;
+    if(localEndDate) txt += ` | Selected to: ${String(localEndDate.getUTCDate()).padStart(2,"0")}.${String(localEndDate.getUTCMonth()+1).padStart(2,"0")}.${localEndDate.getUTCFullYear()}`;
+    selectedRangeText.textContent = txt;
+    console.log(`[${prefix}] Range text updated`);
+  }
 
-  // initial build
+  // Hook selectors
+  monthSelect1.onchange = ()=>{ buildCalendarGrid(Number(yearSelect1.value), Number(monthSelect1.value), grid1);}
+  yearSelect1.onchange = ()=>{ buildCalendarGrid(Number(yearSelect1.value), Number(monthSelect1.value), grid1);}
+  monthSelect2.onchange = ()=>{ buildCalendarGrid(Number(yearSelect2.value), Number(monthSelect2.value), grid2);}
+  yearSelect2.onchange = ()=>{ buildCalendarGrid(Number(yearSelect2.value), Number(monthSelect2.value), grid2);}
+
+  // Initial build
   monthSelect1.selectedIndex = 0; yearSelect1.selectedIndex = 0;
   monthSelect2.selectedIndex = 1; yearSelect2.selectedIndex = 0;
-  currentYear1 = Number(yearSelect1.value); currentMonth1 = Number(monthSelect1.value);
-  currentYear2 = Number(yearSelect2.value); currentMonth2 = Number(monthSelect2.value);
-  buildCalendarGrid(currentYear1,currentMonth1,grid1);
-  buildCalendarGrid(currentYear2,currentMonth2,grid2);
-  return {grid1, grid2, updateCalendarHighlight};
+  buildCalendarGrid(Number(yearSelect1.value), Number(monthSelect1.value), grid1);
+  buildCalendarGrid(Number(yearSelect2.value), Number(monthSelect2.value), grid2);
+
+  return {grid1, grid2, updateCalendarHighlight, updateSelectedText};
 }
 
 /* ================= INIT ================= */
