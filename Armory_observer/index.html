@@ -14,12 +14,15 @@ summary { cursor:pointer; }
 .timestamp { margin-left:32px; color:#555; font-size:0.9em; }
 .controls { margin-bottom:15px; }
 button { margin-left:8px; }
-.calendar-container { display:flex; gap:20px; margin-bottom:10px; }
-.calendar { border:1px solid #ccc; padding:10px; background:#fff; }
-.calendar-grid { display:grid; grid-template-columns: repeat(7, 28px); gap:4px; }
+.calendar-container { display:flex; gap:20px; margin-bottom:15px; }
+.calendar { border:1px solid #ccc; padding:10px; }
+.calendar-grid { display:grid; grid-template-columns: repeat(7,28px); gap:4px; }
 .calendar-day { width:28px; height:28px; text-align:center; line-height:28px; border-radius:4px; user-select:none; }
 .available { background-color:#e0ffe0; cursor:pointer; }
 .unavailable { background-color:#f0f0f0; color:#aaa; cursor:default; }
+.selected { background-color:#a0c4ff; }
+.month-select, .year-select { margin-right:4px; }
+.time-input { width:60px; margin-right:4px; }
 </style>
 </head>
 <body>
@@ -27,21 +30,19 @@ button { margin-left:8px; }
 <h2>Armory Observer</h2>
 
 <div class="controls">
-  <button id="openCalendarBtn">Select Dates</button>
-  <span id="selectedRangeText"></span><br>
-  Start Time: <input type="time" id="startTime" value="00:00">
-  End Time: <input type="time" id="endTime" value="23:59">
-  <button id="clearTimeBtn">Clear Time</button><br>
-  <label><input type="checkbox" id="comparisonToggle"> Comparison Mode</label><br>
+  <button id="toggleComparisonBtn">Toggle Comparison</button>
+  <span id="selectedRangeText"></span>
   <button id="loadBtn">Load Selected</button>
 </div>
 
-<div id="calendarPopup" style="display:none;">
-  <!-- Main Calendar -->
-  <div class="calendar-container" id="mainCalendarContainer"></div>
-  <!-- Comparison Calendar -->
-  <div class="calendar-container" id="comparisonCalendarContainer" style="display:none;"></div>
+<div style="margin-bottom:10px;">
+  Start Time: <input type="time" id="startTimeInput" class="time-input" value="00:00">
+  End Time: <input type="time" id="endTimeInput" class="time-input" value="23:59">
+  <button id="clearTimeBtn">Clear Time</button>
 </div>
+
+<div id="mainCalendarContainer" class="calendar-container"></div>
+<div id="comparisonCalendarContainer" class="calendar-container" style="display:none;"></div>
 
 <hr>
 <div id="output"></div>
@@ -52,45 +53,25 @@ const LOG_BASE = "https://raw.githubusercontent.com/Jeyn-o/Armory_observer/main/
 const NAMES_URL = "https://raw.githubusercontent.com/Jeyn-o/OC_Stalker/refs/heads/main/BC_names.JSON";
 const GH_API_BASE = "https://api.github.com/repos/Jeyn-o/Armory_observer/contents";
 
-const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
 /* ================= STATE ================= */
 let nameMap = {};
-const availableDates = new Set();   // YYYY-MM-DD
-const availableMonths = new Set();  // YYYY-MM
+let mainCalendar = {startDate:null,endDate:null,month:0,year:0};
+let comparisonCalendar = {startDate:null,endDate:null,month:0,year:0};
+let availableDates = new Set();
+let availableMonths = new Set();
+let comparisonEnabled = false;
 
-// Calendars store: {startDate, endDate, currentYear, currentMonth}
-const calendars = {
-  main: { startDate:null, endDate:null, month1:null, month2:null },
-  comparison: { startDate:null, endDate:null, month1:null, month2:null }
-};
+const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 /* ================= HELPERS ================= */
-function makeUTCDate(y,m,d,h=0,min=0,s=0){
-  return new Date(Date.UTC(y,m,d,h,min,s));
-}
-
-function utcDateRange(from,to){
-  const days=[]; const d=new Date(from);
-  while(d<=to){ days.push(new Date(d)); d.setUTCDate(d.getUTCDate()+1); }
-  return days;
-}
-
 function fmtTime(ts){
   const d=new Date(ts*1000);
-  return `${d.toISOString().slice(11,16)}<br>${d.toISOString().slice(8,10)}/${d.toISOString().slice(5,7)}`;
+  const hhmm=d.toISOString().slice(11,16);
+  const ddmm=d.toISOString().slice(8,10)+"/"+d.toISOString().slice(5,7);
+  return `${hhmm}<br>${ddmm}`;
 }
 
-function getUserName(uid){
-  const names=nameMap[uid];
-  if(!names||names.length===0) return {label:uid,former:false,tooltip:""};
-  const last=names[names.length-1];
-  const isFormer=last==="Former Member";
-  const label=isFormer?names[names.length-2]??uid:last;
-  const tooltip=names.length>1?names.join(" → "):"";
-  return {label,former:isFormer,tooltip};
-}
-
+function makeUTCDate(y,m,d,h=0,min=0){ return new Date(Date.UTC(y,m,d,h,min)); }
 function mergeInto(target,data){
   for(const uid in data){
     target[uid] ??= {};
@@ -103,24 +84,34 @@ function mergeInto(target,data){
     }
   }
 }
+function utcDateRange(from,to){
+  const days=[]; const d=new Date(from);
+  while(d<=to){ days.push(new Date(d)); d.setUTCDate(d.getUTCDate()+1); }
+  return days;
+}
 
 /* ================= FETCH ================= */
-async function loadNames(){ nameMap = await fetch(NAMES_URL).then(r=>r.json()); }
+async function loadNames(){
+  nameMap = await fetch(NAMES_URL).then(r=>r.json());
+}
 
 async function loadLogs(from,to){
-  const merged={};
-  const days=utcDateRange(from,to);
-  const byMonth={};
+  const merged = {};
+  const days = utcDateRange(from,to);
+  const byMonth = {};
   for(const d of days){
-    const y=d.getUTCFullYear(), m=String(d.getUTCMonth()+1).padStart(2,"0");
-    const key=`${y}-${m}`; byMonth[key] ??= []; byMonth[key].push(d);
+    const y=d.getUTCFullYear();
+    const m=String(d.getUTCMonth()+1).padStart(2,"0");
+    const key = `${y}-${m}`;
+    byMonth[key] ??= [];
+    byMonth[key].push(d);
   }
 
   for(const monthKey in byMonth){
     const monthDays = byMonth[monthKey];
-    const [y,m]=monthKey.split("-").map(Number);
+    const [y,m] = monthKey.split("-").map(Number);
     const daysInMonth = new Date(Date.UTC(y,m,0)).getUTCDate();
-    const isFullMonth = monthDays.length === daysInMonth && monthDays[0].getUTCDate()===1;
+    const isFullMonth = monthDays.length===daysInMonth && monthDays[0].getUTCDate()===1;
 
     if(isFullMonth && availableMonths.has(monthKey)){
       const url = `${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/Month.json`;
@@ -130,43 +121,20 @@ async function loadLogs(from,to){
         continue;
       }catch{}
     }
+
     for(const d of monthDays){
       const day = String(d.getUTCDate()).padStart(2,"0");
-      const url=`${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/${day}.json`;
+      const url = `${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/${day}.json`;
       try{
         const data = await fetch(url).then(r=>r.ok?r.json():null);
         if(data) mergeInto(merged,data);
       }catch{}
     }
   }
-
-  // Apply time filter
-  const startTimeVal = document.getElementById("startTime").value || "00:00";
-  const endTimeVal = document.getElementById("endTime").value || "23:59";
-  const [startH,startM] = startTimeVal.split(":").map(Number);
-  const [endH,endM] = endTimeVal.split(":").map(Number);
-  const startTS = new Date(from); startTS.setUTCHours(startH,startM,0);
-  const endTS = new Date(to); endTS.setUTCHours(endH,endM,59);
-
-  for(const uid in merged){
-    for(const cat in merged[uid]){
-      for(const item in merged[uid][cat]){
-        merged[uid][cat][item] = merged[uid][cat][item].filter(([amt,ts])=>{
-          const t=new Date(ts*1000);
-          return t>=startTS && t<=endTS;
-        });
-        if(merged[uid][cat][item].length===0) delete merged[uid][cat][item];
-      }
-      if(Object.keys(merged[uid][cat]).length===0) delete merged[uid][cat];
-    }
-    if(Object.keys(merged[uid]).length===0) delete merged[uid];
-  }
-
-  console.log("Filtered from", startTS, "to", endTS);
   return merged;
 }
 
-/* ================= GITHUB DATE DETECTION ================= */
+/* ================= GITHUB DETECTION ================= */
 async function fetchGitHubFolder(path){
   const res = await fetch(`${GH_API_BASE}/${path}`);
   if(!res.ok) throw new Error("GitHub fetch failed");
@@ -182,9 +150,12 @@ async function detectAvailableDates(){
       if(month.type!=="dir") continue;
       const files = await fetchGitHubFolder(`logs/${year.name}/${month.name}`);
       for(const file of files){
-        if(file.type!=="file" || !file.name.endsWith(".json")) continue;
+        if(file.type!=="file"||!file.name.endsWith(".json")) continue;
         if(file.name==="Month.json") availableMonths.add(`${year.name}-${month.name}`);
-        else availableDates.add(`${year.name}-${month.name}-${file.name.replace(".json","")}`);
+        else{
+          const day=file.name.replace(".json","");
+          availableDates.add(`${year.name}-${month.name}-${day}`);
+        }
       }
     }
   }
@@ -192,16 +163,15 @@ async function detectAvailableDates(){
 
 /* ================= RENDER ================= */
 function render(data){
-  const out=document.getElementById("output"); out.innerHTML="";
+  const out=document.getElementById("output");
+  out.innerHTML="";
   for(const uid in data){
-    const name=getUserName(uid);
+    const names=nameMap[uid];
+    const label=names?.[names.length-1]??uid;
     const userDetails=document.createElement("details");
     const userSummary=document.createElement("summary");
-    userSummary.textContent=name.label;
-    if(name.former) userSummary.classList.add("former");
-    if(name.tooltip) userSummary.title=name.tooltip;
+    userSummary.textContent=label;
     userDetails.appendChild(userSummary);
-
     for(const cat in data[uid]){
       const catDetails=document.createElement("details");
       catDetails.className="category";
@@ -214,7 +184,8 @@ function render(data){
         itemDetails.innerHTML=`<summary>${item} (${total})</summary>`;
         entries.forEach(([amt,ts])=>{
           const div=document.createElement("div");
-          div.className="timestamp"; div.innerHTML=`${amt} × ${fmtTime(ts)}`;
+          div.className="timestamp";
+          div.innerHTML=`${amt} × ${fmtTime(ts)}`;
           itemDetails.appendChild(div);
         });
         catDetails.appendChild(itemDetails);
@@ -226,99 +197,143 @@ function render(data){
 }
 
 /* ================= CALENDAR ================= */
-function createDualCalendar(container, calObj){
+function createDualCalendar(container, state){
   container.innerHTML="";
-  for(let offset=-1; offset<=0; offset++){ // previous month and current
-    const d = new Date();
-    d.setUTCMonth(d.getUTCMonth()+offset);
-    const monthDiv=document.createElement("div"); monthDiv.className="calendar";
-    const header=document.createElement("div"); header.textContent=`${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`; monthDiv.appendChild(header);
-    const grid=document.createElement("div"); grid.className="calendar-grid"; monthDiv.appendChild(grid);
+  for(let i=0;i<2;i++){
+    const calDiv=document.createElement("div");
+    calDiv.className="calendar";
+    const monthSel=document.createElement("select");
+    monthSel.className="month-select";
+    const yearSel=document.createElement("select");
+    yearSel.className="year-select";
+    calDiv.appendChild(monthSel); calDiv.appendChild(yearSel);
+    const grid=document.createElement("div"); grid.className="calendar-grid";
+    calDiv.appendChild(grid);
+    container.appendChild(calDiv);
 
-    const firstDay=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1)).getUTCDay();
-    const daysInMonth=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();
-    for(let i=0;i<firstDay;i++) grid.appendChild(document.createElement("div"));
+    // Fill year dropdown
+    const years = Array.from(new Set([...availableDates].map(d=>d.split("-")[0]))).sort((a,b)=>b-a);
+    yearSel.innerHTML="";
+    years.forEach(y=>{
+      const opt=document.createElement("option"); opt.value=y; opt.textContent=y; yearSel.appendChild(opt);
+    });
+    yearSel.value=state.year;
+    // Fill month dropdown
+    monthSel.innerHTML="";
+    monthNames.forEach((name,idx)=>{
+      const opt=document.createElement("option");
+      opt.value=idx; opt.textContent=name;
+      const monthKey=`${state.year}-${String(idx+1).padStart(2,"0")}`;
+      if(!availableMonths.has(monthKey)) opt.disabled=true;
+      monthSel.appendChild(opt);
+    });
+    monthSel.value=state.month;
 
-    for(let day=1;day<=daysInMonth;day++){
-      const div=document.createElement("div");
-      div.textContent=day; div.className="calendar-day";
-      const iso=`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-      if(availableDates.has(iso) || availableMonths.has(`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`)){
-        div.classList.add("available");
-        div.onclick=()=>{
-          const clicked=makeUTCDate(d.getUTCFullYear(),d.getUTCMonth(),day);
-          if(!calObj.startDate || calObj.endDate){ calObj.startDate=clicked; calObj.endDate=null; }
-          else { if(clicked>=calObj.startDate) calObj.endDate=clicked; else { calObj.endDate=calObj.startDate; calObj.startDate=clicked; } }
-          highlightCalendar(container,calObj);
-          updateSelectedText();
-        };
-      } else div.classList.add("unavailable");
-      grid.appendChild(div);
-    }
+    // Build grid
+    buildCalendar(grid,state,Number(yearSel.value),Number(monthSel.value));
+
+    monthSel.onchange=()=>buildCalendar(grid,state,Number(yearSel.value),Number(monthSel.value));
+    yearSel.onchange=()=>{
+      buildCalendar(grid,state,Number(yearSel.value),Number(monthSel.value));
+      // Re-disable months based on new year
+      Array.from(monthSel.options).forEach(opt=>{
+        const monthKey=`${yearSel.value}-${String(Number(opt.value)+1).padStart(2,"0")}`;
+        opt.disabled=!availableMonths.has(monthKey);
+      });
+    };
   }
-  highlightCalendar(container,calObj);
 }
 
-function highlightCalendar(container, calObj){
-  container.querySelectorAll(".calendar-day").forEach(div=>div.style.backgroundColor="");
-  if(!calObj.startDate) return;
-  container.querySelectorAll(".calendar-day.available").forEach(div=>{
-    const day = Number(div.textContent);
-    const parentHeader = div.closest(".calendar").querySelector("div").textContent;
-    const [monthName, yearStr] = parentHeader.split(" "); const month = monthNames.indexOf(monthName);
-    const year = Number(yearStr);
-    const date = makeUTCDate(year,month,day);
-    if(calObj.endDate){ if(date>=calObj.startDate && date<=calObj.endDate) div.style.backgroundColor="#a0c4ff"; }
-    else { if(date.getTime()===calObj.startDate.getTime()) div.style.backgroundColor="#a0c4ff"; }
+function buildCalendar(grid,state,year,month){
+  state.year=year; state.month=month;
+  grid.innerHTML="";
+  const firstDay=new Date(Date.UTC(year,month,1)).getUTCDay();
+  const daysInMonth=new Date(Date.UTC(year,month+1,0)).getUTCDate();
+  for(let i=0;i<firstDay;i++) grid.appendChild(document.createElement("div"));
+
+  for(let d=1;d<=daysInMonth;d++){
+    const div=document.createElement("div");
+    div.textContent=d; div.className="calendar-day";
+    const iso=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    if(availableDates.has(iso) || availableMonths.has(`${year}-${String(month+1).padStart(2,"0")}`)){
+      div.classList.add("available");
+      div.onclick=()=>{
+        const clicked=makeUTCDate(year,month,d);
+        if(!state.startDate || state.endDate){
+          state.startDate=clicked; state.endDate=null;
+        }else{
+          if(clicked>=state.startDate) state.endDate=clicked;
+          else { state.endDate=state.startDate; state.startDate=clicked; }
+        }
+        updateHighlight(grid,state);
+        updateSelectedText();
+      };
+    } else div.classList.add("unavailable");
+    grid.appendChild(div);
+  }
+  updateHighlight(grid,state);
+}
+
+function updateHighlight(grid,state){
+  Array.from(grid.querySelectorAll(".calendar-day")).forEach(div=>div.classList.remove("selected"));
+  if(!state.startDate) return;
+  Array.from(grid.querySelectorAll(".calendar-day.available")).forEach(div=>{
+    const day=Number(div.textContent);
+    const date=makeUTCDate(state.year,state.month,day);
+    if(state.endDate){
+      if(date>=state.startDate && date<=state.endDate) div.classList.add("selected");
+    }else if(date.getTime()===state.startDate.getTime()) div.classList.add("selected");
   });
 }
 
 function updateSelectedText(){
-  const cal = calendars.main;
-  if(!cal.startDate){ selectedRangeText.textContent=""; return; }
-  let txt=`Selected from: ${String(cal.startDate.getUTCDate()).padStart(2,"0")}.${String(cal.startDate.getUTCMonth()+1).padStart(2,"0")}.${cal.startDate.getUTCFullYear()}`;
-  if(cal.endDate) txt+=` | Selected to: ${String(cal.endDate.getUTCDate()).padStart(2,"0")}.${String(cal.endDate.getUTCMonth()+1).padStart(2,"0")}.${cal.endDate.getUTCFullYear()}`;
+  const container=comparisonEnabled?comparisonCalendar:mainCalendar;
+  if(!container.startDate){ selectedRangeText.textContent=""; return; }
+  let txt=`Selected from: ${container.startDate.toUTCString()}`;
+  if(container.endDate) txt+=` | Selected to: ${container.endDate.toUTCString()}`;
   selectedRangeText.textContent=txt;
 }
 
-/* ================= BUTTONS ================= */
-document.getElementById("openCalendarBtn").onclick=()=>{
-  document.getElementById("calendarPopup").style.display="block";
-  createDualCalendar(document.getElementById("mainCalendarContainer"),calendars.main);
-};
-
+/* ================= TIME HANDLERS ================= */
 document.getElementById("clearTimeBtn").onclick=()=>{
-  document.getElementById("startTime").value="00:00";
-  document.getElementById("endTime").value="23:59";
+  document.getElementById("startTimeInput").value="00:00";
+  document.getElementById("endTimeInput").value="23:59";
 };
 
-document.getElementById("comparisonToggle").onchange=(e)=>{
-  document.getElementById("comparisonCalendarContainer").style.display=e.target.checked?"flex":"none";
-  if(e.target.checked) createDualCalendar(document.getElementById("comparisonCalendarContainer"),calendars.comparison);
-};
-
+/* ================= LOAD / COMPARE ================= */
 document.getElementById("loadBtn").onclick=async()=>{
-  if(document.getElementById("comparisonToggle").checked){
-    console.log("Comparison mode enabled");
-    compare_data(calendars.main, calendars.comparison);
+  const from=mainCalendar.startDate;
+  const to=mainCalendar.endDate||mainCalendar.startDate;
+  if(!from) return;
+  if(comparisonEnabled){
+    // TODO: gather comparison calendar range and call compare_data()
+    compare_data(
+      {start:from,end:to},
+      {start:comparisonCalendar.startDate,end:comparisonCalendar.endDate||comparisonCalendar.startDate}
+    );
   } else {
-    const cal = calendars.main;
-    if(!cal.startDate) return;
-    console.log("Loading main calendar range:", cal.startDate, cal.endDate||cal.startDate);
-    const data = await loadLogs(cal.startDate, cal.endDate||cal.startDate);
+    console.log("Loading main calendar range:",from,to);
+    const data=await loadLogs(from,to);
     render(data);
   }
+};
+
+/* ================= TOGGLE COMPARISON ================= */
+document.getElementById("toggleComparisonBtn").onclick=()=>{
+  comparisonEnabled=!comparisonEnabled;
+  document.getElementById("comparisonCalendarContainer").style.display=comparisonEnabled?"flex":"none";
 };
 
 /* ================= INIT ================= */
 (async()=>{
   await loadNames();
   await detectAvailableDates();
+  const today=new Date();
+  mainCalendar.month=today.getUTCMonth()-1; if(mainCalendar.month<0){mainCalendar.month=11; mainCalendar.year=today.getUTCFullYear()-1;} else mainCalendar.year=today.getUTCFullYear();
+  comparisonCalendar.month=today.getUTCMonth(); comparisonCalendar.year=today.getUTCFullYear();
+  createDualCalendar(document.getElementById("mainCalendarContainer"),mainCalendar);
+  createDualCalendar(document.getElementById("comparisonCalendarContainer"),comparisonCalendar);
 })();
-function compare_data(range1, range2){
-  console.log("compare_data called", range1, range2);
-  alert("Comparison function stub called. Check console logs.");
-}
 </script>
 
 </body>
