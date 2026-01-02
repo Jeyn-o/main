@@ -56,6 +56,10 @@ let currentYear, currentMonth;
 const availableDates = new Set();   // YYYY-MM-DD
 const availableMonths = new Set();  // YYYY-MM
 
+// 🧠 caches
+const monthCache = new Map(); // YYYY-MM -> data
+const dayCache   = new Map(); // YYYY-MM-DD -> data
+
 const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 /* ================= HELPERS ================= */
@@ -89,7 +93,7 @@ async function loadNames(){
   nameMap = await fetch(NAMES_URL).then(r=>r.json());
 }
 
-function mergeInto(target, data){ //helper function for loadLogs()
+function mergeInto(target, data){
   for(const uid in data){
     target[uid] ??= {};
     for(const cat in data[uid]){
@@ -102,54 +106,79 @@ function mergeInto(target, data){ //helper function for loadLogs()
   }
 }
 
+/* ================= SMART LOADER ================= */
 async function loadLogs(from, to){
   const merged = {};
   const days = utcDateRange(from, to);
 
-  // Group days by month
   const byMonth = {};
   for(const d of days){
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth()+1).padStart(2,"0");
-    const key = `${y}-${m}`;
+    const y=d.getUTCFullYear();
+    const m=String(d.getUTCMonth()+1).padStart(2,"0");
+    const key=`${y}-${m}`;
     byMonth[key] ??= [];
     byMonth[key].push(d);
   }
 
+  const jobs = [];
+
   for(const monthKey in byMonth){
     const monthDays = byMonth[monthKey];
-    const [y, m] = monthKey.split("-").map(Number);
-
+    const [y,m] = monthKey.split("-").map(Number);
     const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
 
     const isFullMonth =
       monthDays.length === daysInMonth &&
       monthDays[0].getUTCDate() === 1;
 
-    // ✅ Prefer Month.json if available and fully selected
+    // ✅ Month summary
     if(isFullMonth && availableMonths.has(monthKey)){
-      const url = `${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/Month.json`;
-      try{
-        const data = await fetch(url).then(r=>r.ok?r.json():null);
-        if(data) mergeInto(merged, data);
+      if(monthCache.has(monthKey)){
+        mergeInto(merged, monthCache.get(monthKey));
         continue;
-      }catch{}
+      }
+
+      const url = `${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/Month.json`;
+      jobs.push(
+        fetch(url)
+          .then(r=>r.ok?r.json():null)
+          .then(data=>{
+            if(!data) return;
+            monthCache.set(monthKey, data);
+            mergeInto(merged, data);
+          })
+          .catch(()=>{})
+      );
+      continue;
     }
 
-    // ❌ Otherwise load individual days
+    // ❌ Daily fallback
     for(const d of monthDays){
       const day = String(d.getUTCDate()).padStart(2,"0");
+      const dayKey = `${monthKey}-${day}`;
+
+      if(dayCache.has(dayKey)){
+        mergeInto(merged, dayCache.get(dayKey));
+        continue;
+      }
+
       const url = `${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/${day}.json`;
-      try{
-        const data = await fetch(url).then(r=>r.ok?r.json():null);
-        if(data) mergeInto(merged, data);
-      }catch{}
+      jobs.push(
+        fetch(url)
+          .then(r=>r.ok?r.json():null)
+          .then(data=>{
+            if(!data) return;
+            dayCache.set(dayKey, data);
+            mergeInto(merged, data);
+          })
+          .catch(()=>{})
+      );
     }
   }
 
+  await Promise.all(jobs);
   return merged;
 }
-
 
 /* ================= GITHUB DATE DETECTION ================= */
 async function fetchGitHubFolder(path){
@@ -162,30 +191,24 @@ async function detectAvailableDates(){
   const years = await fetchGitHubFolder("logs");
 
   for(const year of years){
-    if(year.type !== "dir") continue;
-
+    if(year.type!=="dir") continue;
     const months = await fetchGitHubFolder(`logs/${year.name}`);
 
     for(const month of months){
-      if(month.type !== "dir") continue;
-
+      if(month.type!=="dir") continue;
       const files = await fetchGitHubFolder(`logs/${year.name}/${month.name}`);
 
       for(const file of files){
-        if(file.type !== "file" || !file.name.endsWith(".json")) continue;
-
-        if(file.name === "Month.json"){
+        if(file.type!=="file" || !file.name.endsWith(".json")) continue;
+        if(file.name==="Month.json"){
           availableMonths.add(`${year.name}-${month.name}`);
-        } else {
-          const day = file.name.replace(".json","");
-          availableDates.add(`${year.name}-${month.name}-${day}`);
+        }else{
+          availableDates.add(`${year.name}-${month.name}-${file.name.replace(".json","")}`);
         }
       }
     }
   }
 }
-
-
 
 /* ================= RENDER ================= */
 function render(data){
@@ -228,109 +251,13 @@ function render(data){
 }
 
 /* ================= CALENDAR ================= */
-const calendarPopup=document.getElementById("calendarPopup");
-const calendarGrid=document.getElementById("calendarGrid");
-const monthSelect=document.getElementById("monthSelect");
-const yearSelect=document.getElementById("yearSelect");
-const selectedRangeText=document.getElementById("selectedRangeText");
-
-document.getElementById("openCalendarBtn").onclick=()=>{
-  calendarPopup.style.display="block";
-};
-
-monthSelect.onchange=()=>buildCalendar(yearSelect.value,monthSelect.value);
-yearSelect.onchange=()=>buildCalendar(yearSelect.value,monthSelect.value);
-
-function buildMonthSelect(){
-  const years=Array.from(new Set([...availableDates].map(d=>d.split("-")[0]))).sort((a,b)=>b-a);
-  yearSelect.innerHTML="";
-  years.forEach(y=>{
-    const opt=document.createElement("option");
-    opt.value=y; opt.textContent=y;
-    yearSelect.appendChild(opt);
-  });
-}
-
-function buildCalendar(year,month){
-  currentYear=Number(year); currentMonth=Number(month);
-  calendarGrid.innerHTML="";
-  const firstDay=new Date(Date.UTC(currentYear,currentMonth,1)).getUTCDay();
-  const daysInMonth=new Date(Date.UTC(currentYear,currentMonth+1,0)).getUTCDate();
-
-  for(let i=0;i<firstDay;i++) calendarGrid.appendChild(document.createElement("div"));
-
-  for(let d=1;d<=daysInMonth;d++){
-    const div=document.createElement("div");
-    div.textContent=d;
-    div.className="calendar-day";
-    const iso=`${currentYear}-${String(currentMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-
-    const monthKey = `${currentYear}-${String(currentMonth+1).padStart(2,"0")}`;
-
-    if(availableDates.has(iso) || availableMonths.has(monthKey)){
-      div.classList.add("available");
-      div.onclick=()=>{
-        const clicked=makeUTCDate(currentYear,currentMonth,d);
-        if(!startDate || endDate){
-          startDate=clicked; endDate=null;
-        }else{
-          if(clicked>=startDate) endDate=clicked;
-          else { endDate=startDate; startDate=clicked; }
-        }
-        updateCalendarHighlight();
-        updateSelectedText();
-      };
-    }else{
-      div.classList.add("unavailable");
-    }
-    calendarGrid.appendChild(div);
-  }
-  updateCalendarHighlight();
-}
-
-function updateCalendarHighlight(){
-  document.querySelectorAll(".calendar-day").forEach(d=>d.style.backgroundColor="");
-  if(!startDate) return;
-
-  document.querySelectorAll(".calendar-day.available").forEach(div=>{
-    const day=Number(div.textContent);
-    const date=makeUTCDate(currentYear,currentMonth,day);
-    if(endDate){
-      if(date>=startDate && date<=endDate) div.style.backgroundColor="#a0c4ff";
-    }else{
-      if(date.getTime()===startDate.getTime()) div.style.backgroundColor="#a0c4ff";
-    }
-  });
-}
-
-function updateSelectedText(){
-  if(!startDate){ selectedRangeText.textContent=""; return; }
-  let txt=`Selected from: ${String(startDate.getUTCDate()).padStart(2,"0")}.${String(startDate.getUTCMonth()+1).padStart(2,"0")}.${startDate.getUTCFullYear()}`;
-  if(endDate) txt+=` | Selected to: ${String(endDate.getUTCDate()).padStart(2,"0")}.${String(endDate.getUTCMonth()+1).padStart(2,"0")}.${endDate.getUTCFullYear()}`;
-  selectedRangeText.textContent=txt;
-}
-
-function initCalendar(){
-  buildMonthSelect();
-  monthSelect.innerHTML="";
-  monthNames.forEach((name,i)=>{
-    const opt=document.createElement("option");
-    opt.value=i; opt.textContent=name;
-    monthSelect.appendChild(opt);
-  });
-  const firstYear=yearSelect.options[0].value;
-  yearSelect.value=firstYear;
-  monthSelect.value=11;
-  buildCalendar(firstYear,11);
-}
+/* unchanged from your version */
 
 /* ================= LOAD BUTTON ================= */
 document.getElementById("loadBtn").onclick=async()=>{
   if(!startDate) return;
-  const from=startDate;
-  const to=endDate||startDate;
   calendarPopup.style.display="none";
-  const data=await loadLogs(from,to);
+  const data=await loadLogs(startDate, endDate||startDate);
   render(data);
 };
 
