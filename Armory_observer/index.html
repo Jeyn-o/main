@@ -53,7 +53,8 @@ let nameMap = {};
 let startDate = null, endDate = null;
 let currentYear, currentMonth;
 
-const availableDates = new Set();
+const availableDates = new Set();   // YYYY-MM-DD
+const availableMonths = new Set();  // YYYY-MM
 
 const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -88,29 +89,67 @@ async function loadNames(){
   nameMap = await fetch(NAMES_URL).then(r=>r.json());
 }
 
-async function loadLogs(from,to){
-  const merged={};
-  for(const d of utcDateRange(from,to)){
-    const y=d.getUTCFullYear();
-    const m=String(d.getUTCMonth()+1).padStart(2,"0");
-    const day=String(d.getUTCDate()).padStart(2,"0");
-    const url=`${LOG_BASE}/${y}/${m}/${day}.json`;
-    try{
-      const data=await fetch(url).then(r=>{if(!r.ok)throw new Error("404"); return r.json();});
-      for(const uid in data){
-        merged[uid]??={};
-        for(const cat in data[uid]){
-          merged[uid][cat]??={};
-          for(const item in data[uid][cat]){
-            merged[uid][cat][item]??=[];
-            merged[uid][cat][item].push(...data[uid][cat][item]);
-          }
-        }
+function mergeInto(target, data){ //helper function for loadLogs()
+  for(const uid in data){
+    target[uid] ??= {};
+    for(const cat in data[uid]){
+      target[uid][cat] ??= {};
+      for(const item in data[uid][cat]){
+        target[uid][cat][item] ??= [];
+        target[uid][cat][item].push(...data[uid][cat][item]);
       }
-    }catch{}
+    }
   }
+}
+
+async function loadLogs(from, to){
+  const merged = {};
+  const days = utcDateRange(from, to);
+
+  // Group days by month
+  const byMonth = {};
+  for(const d of days){
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth()+1).padStart(2,"0");
+    const key = `${y}-${m}`;
+    byMonth[key] ??= [];
+    byMonth[key].push(d);
+  }
+
+  for(const monthKey in byMonth){
+    const monthDays = byMonth[monthKey];
+    const [y, m] = monthKey.split("-").map(Number);
+
+    const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+    const isFullMonth =
+      monthDays.length === daysInMonth &&
+      monthDays[0].getUTCDate() === 1;
+
+    // ✅ Prefer Month.json if available and fully selected
+    if(isFullMonth && availableMonths.has(monthKey)){
+      const url = `${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/Month.json`;
+      try{
+        const data = await fetch(url).then(r=>r.ok?r.json():null);
+        if(data) mergeInto(merged, data);
+        continue;
+      }catch{}
+    }
+
+    // ❌ Otherwise load individual days
+    for(const d of monthDays){
+      const day = String(d.getUTCDate()).padStart(2,"0");
+      const url = `${LOG_BASE}/${y}/${String(m).padStart(2,"0")}/${day}.json`;
+      try{
+        const data = await fetch(url).then(r=>r.ok?r.json():null);
+        if(data) mergeInto(merged, data);
+      }catch{}
+    }
+  }
+
   return merged;
 }
+
 
 /* ================= GITHUB DATE DETECTION ================= */
 async function fetchGitHubFolder(path){
@@ -133,15 +172,20 @@ async function detectAvailableDates(){
       const files = await fetchGitHubFolder(`logs/${year.name}/${month.name}`);
 
       for(const file of files){
-        if(file.type === "file" && file.name.endsWith(".json")){
+        if(file.type !== "file" || !file.name.endsWith(".json")) continue;
+
+        if(file.name === "Month.json"){
+          availableMonths.add(`${year.name}-${month.name}`);
+        } else {
           const day = file.name.replace(".json","");
-          const iso = `${year.name}-${month.name}-${day}`;
-          availableDates.add(iso);
+          availableDates.add(`${year.name}-${month.name}-${day}`);
         }
       }
     }
   }
 }
+
+
 
 /* ================= RENDER ================= */
 function render(data){
@@ -221,7 +265,9 @@ function buildCalendar(year,month){
     div.className="calendar-day";
     const iso=`${currentYear}-${String(currentMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
 
-    if(availableDates.has(iso)){
+    const monthKey = `${currentYear}-${String(currentMonth+1).padStart(2,"0")}`;
+
+    if(availableDates.has(iso) || availableMonths.has(monthKey)){
       div.classList.add("available");
       div.onclick=()=>{
         const clicked=makeUTCDate(currentYear,currentMonth,d);
