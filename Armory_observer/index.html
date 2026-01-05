@@ -113,6 +113,13 @@ a:visited {
   overflow: hidden;
 }
 
+.filter-item.former-player {
+  opacity: 0.5;
+  font-style: italic;
+  /* or color: gray; background-color: #f0f0f0; whatever fits your UI */
+}
+
+
 /* ===============================
    SUMMARIES
 ================================ */
@@ -122,6 +129,12 @@ a:visited {
   gap: 0;
   color: #ddd;
 }
+
+.summary-header {
+  text-align:center;
+}
+
+
 
 /* ----- Tabs container ----- */
 .summary-tabs {
@@ -394,9 +407,8 @@ button {
 
 #toggleCalendarBtn {
   position: fixed;       /* Always visible on screen */
-  top: 10px;             /* distance from top */
-  left: 230px;           /* just right of the sidebar (sidebar width = 220px + 10px padding) */
   z-index: 1001;         /* above everything else */
+  left:100px;
   background: #2b2b2b;
   color: #ddd;
   border: 1px solid #555;
@@ -418,8 +430,8 @@ button {
 <div id="filterSidebar">
   <div class="filter-section">
     <h3>Sort</h3>
-    <button data-sort="desc" class="sort-btn active">Newest → Oldest</button>
-    <button data-sort="asc" class="sort-btn">Oldest → Newest</button>
+    <button data-sort="desc" class="sort-btn active">Old to New</button>
+    <button data-sort="asc" class="sort-btn">New to Old</button>
   </div>
 
   <div class="filter-section">
@@ -443,23 +455,32 @@ button {
     </div>
   </div>
 </div>
-<button id="toggleCalendarBtn" onclick="toggleCalendar()">Select Time</button>
+<button id="toggleCalendarBtn" onclick="toggleCalendar()">Select New Time</button>
 
 <div id="main">
 <div id="summaries"></div>
 <div id="output"></div>
 </div>
 
-<div class="timeSelector">
+<div style="width:280px" class="timeSelector">
 <div class="controls">
-  <button id="toggleCompareBtn">Toggle Comparison Calendar</button>
-  <span id="selectedRangeText"></span>
-  <button id="loadBtn">Load Selected</button>
+  <button disabled id="toggleCompareBtn">Compare mode</button>
+  <button style="margin-left:28px" id="loadBtn">Load Selected</button>
+  
+  <span style="display:none" id="selectedRangeText"></span>
+</div>
+
+
+
+
+<div id="calendarWrapper">
+  <div class="calendar-container" id="primaryCalendars"></div>
+  <div class="calendar-container" id="compareCalendars" style="display:none;"></div>
 </div>
 
 <div>
-  Start Time: <input type="time" id="startTime" value="00:00">
-  End Time: <input type="time" id="endTime" value="23:59">
+  <span>Start: <input type="time" id="startTime" value="00:00"></span>
+  <span style="margin-left:15px;">End: <input type="time" id="endTime" value="23:59"></span>
 </div>
 
 <div id="comparisonTimes" style="display:none; margin-top:5px;">
@@ -467,11 +488,6 @@ button {
   Comparison End: <input type="time" id="compEndTime" value="23:59">
 </div>
 
-
-<div id="calendarWrapper">
-  <div class="calendar-container" id="primaryCalendars"></div>
-  <div class="calendar-container" id="compareCalendars" style="display:none;"></div>
-</div>
 </div>
 
 
@@ -507,6 +523,8 @@ const filters = {
 let ITEM_CATEGORIES = {}; // from items.json
 let PLAYER_NAMES = {};    // from BC_names.JSON
 
+let currentData = {}; //Trimmed data from calendar selection
+
 
 /* ================= HELPERS ================= */
 function makeUTCDate(y,m,d){ return new Date(Date.UTC(y,m,d)); }
@@ -514,12 +532,32 @@ function makeUTCDate(y,m,d){ return new Date(Date.UTC(y,m,d)); }
 let CURRENT_TIME_LABEL = "";
 let COMPARE_TIME_LABEL = "";
 
-function fmtDate(date) {
+/*function fmtDate(date) {
   // date is a JS Date object
   return date.toISOString().slice(8, 10) + "/" +
          date.toISOString().slice(5, 7) + "/" +
          date.toISOString().slice(0, 4);
+}*/
+
+function fmtDate(date) {
+  const weekday = date.toLocaleDateString("en-GB", { weekday: "long" });
+  const day     = date.toISOString().slice(8, 10);
+  const month   = date.toISOString().slice(5, 7);
+  const year    = date.toISOString().slice(0, 4);
+
+  return `${weekday} ${day}.${month}.${year}`;
 }
+
+const ACTION_LABELS = {
+  donated: "Donated",
+  used: "Used",
+  filled: "Filled",
+  loaned: "Loaned",
+  loaned_receive: "Received",
+  returned: "Returned",
+  retrieved: "Retrieved"
+};
+
 
 // --- ITEM CATEGORY LOOKUP ---
 function normalize(s) { return s.trim().toLowerCase(); }
@@ -527,21 +565,25 @@ function normalize(s) { return s.trim().toLowerCase(); }
 const ITEM_LOOKUP = {};
 
 function buildItemLookup() {
-  Object.keys(ITEM_LOOKUP).forEach(k => delete ITEM_LOOKUP[k]); // clear old entries
+  // Clear old entries
+  Object.keys(ITEM_LOOKUP).forEach(k => delete ITEM_LOOKUP[k]);
+
   for (const [cat, items] of Object.entries(ITEM_CATEGORIES)) {
     for (const item of items) {
-      ITEM_LOOKUP[normalize(item)] = cat;
+      const key = normalize(item);
+      if (!ITEM_LOOKUP[key]) ITEM_LOOKUP[key] = [];
+      ITEM_LOOKUP[key].push(cat); // store all categories the item belongs to
     }
   }
+
   console.log("ITEM_LOOKUP ready:", ITEM_LOOKUP);
 }
 
 
+
 function getItemCategory(itemName) {
-  if (!itemName || itemName.startsWith("__")) return "Other";
-  const cat = ITEM_LOOKUP[normalize(itemName)] || "Other";
-  //console.log("getItemCategory:", itemName, "→", cat);
-  return cat;
+  if (!itemName || itemName.startsWith("__")) return ["Other"]; // always return an array
+  return ITEM_LOOKUP[normalize(itemName)] || ["Other"];
 }
 
 
@@ -578,7 +620,7 @@ function getUserName(uid){
   return {
     label,
     former: isFormer,
-    tooltip: previousNames.length > 1 ? previousNames.join(" → ") : ""
+    tooltip: previousNames.length > 1 ? previousNames.join(", ") : ""
   };
 }
 
@@ -893,25 +935,17 @@ function buildSummaryTree(events) {
   const tree = {};
 
   events.forEach(ev => {
-    // Determine category
-    const cat = getItemCategory(ev.item);
-	//console.log("SUMMARY TREE CATEGORY:", ev.item, "->", cat);
-    if (!tree[cat]) tree[cat] = {};
+    const cats = getItemCategory(ev.item); // array of categories
+    cats.forEach(cat => { // loop over each
+      if (!tree[cat]) tree[cat] = {};
+      if (ev.item.startsWith("__")) return;
+      if (!tree[cat][ev.item]) tree[cat][ev.item] = {};
+      if (!tree[cat][ev.item][ev.action]) tree[cat][ev.item][ev.action] = {};
+      const player = getUserName(ev.user).label;
+      if (!tree[cat][ev.item][ev.action][player]) tree[cat][ev.item][ev.action][player] = 0;
 
-    // Skip placeholders like "__TOOLS__"
-    if (ev.item.startsWith("__")) return;
-
-    // Item
-    if (!tree[cat][ev.item]) tree[cat][ev.item] = {};
-
-    // Action
-    if (!tree[cat][ev.item][ev.action]) tree[cat][ev.item][ev.action] = {};
-
-    // Player
-    const player = getUserName(ev.user).label;
-    if (!tree[cat][ev.item][ev.action][player]) tree[cat][ev.item][ev.action][player] = 0;
-
-    tree[cat][ev.item][ev.action][player] += parseInt(ev.amount);
+      tree[cat][ev.item][ev.action][player] += parseInt(ev.amount);
+    });
   });
 
   return tree;
@@ -919,9 +953,12 @@ function buildSummaryTree(events) {
 
 
 
+
 function renderSummary(tree, events, timeLabel) {
   const container = document.getElementById("summaries");
   container.innerHTML = "";
+  
+  console.log("renderSummary: tree:", tree, " events:", events, " timeLabel:", timeLabel); 
 
   // === HEADER ===
   const header = document.createElement("div");
@@ -1080,10 +1117,42 @@ function reparse(ev, usernameMap) {
 }
 
 
+function summaryPerPlayer(data, player) {
+  const summaryContainer = document.getElementById("summaries");
+  if (summaryContainer) summaryContainer.innerHTML = "";
 
+  // Same flattening as render()
+  const allEvents = flattenData(data);
+
+  // ⬇️ Filter to one player
+  const events = allEvents.filter(e => String(e.user) === String(player));
+
+  if (!events.length) return;
+
+  const summaryTree = buildSummaryTree(events, ITEM_CATEGORIES);
+
+  const newLabel = `${CURRENT_TIME_LABEL} -- ${getUserName(player).label}`;
+
+  renderSummary(summaryTree, events, newLabel);
+}
+
+function summaryAll(data) {
+  const summaryContainer = document.getElementById("summaries");
+  if (summaryContainer) summaryContainer.innerHTML = "";
+
+  // Same flattening as render()
+  const events = flattenData(data);
+
+  const summaryTree = buildSummaryTree(events, ITEM_CATEGORIES);
+
+  const newLabel = `${CURRENT_TIME_LABEL}`;
+
+  renderSummary(summaryTree, events, newLabel);
+}
 
 // === SINGLE CALENDAR RENDER ===
 function render(data) {
+console.log("DATA:",data);
   const out = document.getElementById("output");
   out.innerHTML = "";
 
@@ -1097,6 +1166,9 @@ function render(data) {
 
   // Build + render structured summary
   const summaryTree = buildSummaryTree(events, ITEM_CATEGORIES);
+  
+  console.log("render: summaryTree:", summaryTree, " - Made using buildSummaryTree(events, ITEM_CATEGORIES). events:", events, " ITEM_CATEGORIES: ", ITEM_CATEGORIES, ".");
+  //if we filter "events" here to be per-player, we maybe get the result already
 
   renderSummary(
     summaryTree,
@@ -1113,7 +1185,7 @@ function render(data) {
   buildFilterSidebar(logsBox, PLAYER_NAMES, ITEM_CATEGORIES);
 
   // For console / debugging
-  window._lastEvents = events;
+  //window._lastEvents = events;
 }
 
 
@@ -1370,7 +1442,7 @@ function createCalendar(container, label) {
     if (start) {
       selectedRangeText.textContent =
         `${label}: ${start.toISOString().slice(0, 10)}` +
-        (end ? ` → ${end.toISOString().slice(0, 10)}` : "");
+        (end ? ` to ${end.toISOString().slice(0, 10)}` : "");
     }
   }
 
@@ -1393,8 +1465,16 @@ function createCalendar(container, label) {
   month.onchange = () => buildGrid(+year.value, +month.value, grid);
 
   return {
-    getRange() { return { from: start, to: end || start }; }
+	getRange() {
+	  return { from: start, to: end || start };
+    },
+	reset() {
+	  start = null;
+      end = null;
+      update(); // clears visual selection too
+	}
   };
+
 }
 
 function toggleCalendar() {
@@ -1417,9 +1497,8 @@ async function loadFilterData() {
     .then(r => r.json());
 
   // Build the lookup after items.json is loaded
-  console.log("items.json", ITEM_CATEGORIES);
-  console.log("running buildItemLookup");
   buildItemLookup();
+  console.log("ITEM_CATEGORIES", ITEM_CATEGORIES);
 
   // Now that ITEM_LOOKUP is ready, build filters
   //buildCategoryFilters();
@@ -1546,11 +1625,11 @@ function buildFilterSidebar(logContainer, usernameMap, itemsData) {
   sortSection.innerHTML = `<h3>Sort</h3>`;
   const newestBtn = document.createElement("button");
   newestBtn.className = "sort-btn active";
-  newestBtn.textContent = "Newest → Oldest";
+  newestBtn.textContent = "Old to New";
   newestBtn.dataset.sort = "desc";
   const oldestBtn = document.createElement("button");
   oldestBtn.className = "sort-btn";
-  oldestBtn.textContent = "Oldest → Newest";
+  oldestBtn.textContent = "New to Old";
   oldestBtn.dataset.sort = "asc";
 
   [newestBtn, oldestBtn].forEach(btn => {
@@ -1578,7 +1657,8 @@ function buildFilterSidebar(logContainer, usernameMap, itemsData) {
     const div = document.createElement("div");
     div.className = "filter-item";
     div.dataset.action = act;
-    div.textContent = act;
+    //div.textContent = act;
+	div.textContent = ACTION_LABELS[act] ?? act;
     div.addEventListener("click", () => {
       filterState.action = filterState.action === act ? null : act;
       actionList.querySelectorAll(".filter-item").forEach(i => i.classList.remove("active"));
@@ -1602,23 +1682,26 @@ function buildFilterSidebar(logContainer, usernameMap, itemsData) {
   // Build list of categories that actually appear in the logs
   const categoriesInLogs = new Set();
   logEntries.forEach(e => {
-    const cat = getItemCategory(e.dataset.item);
-    categoriesInLogs.add(cat);
+    const cats = getItemCategory(e.dataset.item); // array
+    cats.forEach(cat => categoriesInLogs.add(cat)); // add each individually
   });
 
+
   [...categoriesInLogs].sort().forEach(cat => {
-    const catDiv = document.createElement("div");
-    catDiv.className = "filter-item";
-    catDiv.dataset.item = cat;
-    catDiv.textContent = cat;
-    catDiv.addEventListener("click", () => {
-      filterState.item = filterState.item === cat ? null : cat;
-      categoryList.querySelectorAll(".filter-item").forEach(i => i.classList.remove("active"));
-      if(filterState.item) catDiv.classList.add("active");
-      applyFilters();
-    });
-    categoryList.appendChild(catDiv);
+  const catDiv = document.createElement("div");
+  catDiv.className = "filter-item";
+  catDiv.dataset.item = cat;
+  catDiv.textContent = cat === "OC_items" ? "OC Items" : cat; // clean label
+
+  catDiv.addEventListener("click", () => {
+    filterState.item = filterState.item === cat ? null : cat;
+    categoryList.querySelectorAll(".filter-item").forEach(i => i.classList.remove("active"));
+    if(filterState.item) catDiv.classList.add("active");
+    applyFilters();
   });
+  categoryList.appendChild(catDiv);
+});
+
 
   // Collapse toggle
   categoryHeader.addEventListener("click", () => {
@@ -1662,7 +1745,12 @@ function buildFilterSidebar(logContainer, usernameMap, itemsData) {
     const div = document.createElement("div");
     div.className = "filter-item";
     div.dataset.player = uid;
-    div.textContent = nameObj.label + (nameObj.former ? " (former)" : "");
+    //div.textContent = nameObj.label + (nameObj.former ? " (former)" : "");
+	div.textContent = nameObj.label;
+	if (nameObj.former) {
+	  div.classList.add("former-player");
+	}
+
     if(nameObj.tooltip) div.title = nameObj.tooltip;
 
     div.addEventListener("click", () => {
@@ -1684,33 +1772,43 @@ function buildFilterSidebar(logContainer, usernameMap, itemsData) {
 
   // --- APPLY FILTERS ---
   function applyFilters() {
-    logEntries.forEach(entry => {
-      let show = true;
+  logEntries.forEach(entry => {
+    let show = true;
 
-      // User filter
-      if (filterState.user !== "all" && entry.dataset.user !== filterState.user) show = false;
+    // User filter
+    if (filterState.user !== "all" && entry.dataset.user !== filterState.user) show = false;
 
-      // Action filter
-      if (filterState.action && !entry.classList.contains(filterState.action)) show = false;
+    // Action filter
+    if (filterState.action && !entry.classList.contains(filterState.action)) show = false;
 
-      // Item category filter
-      if (filterState.item) {
-        const entryCat = getItemCategory(entry.dataset.item);
-        if (entryCat !== filterState.item) show = false;
-      }
+    // Item category filter
+    if (filterState.item) {
+      // New: handles multi-category items
+	  const entryCats = getItemCategory(entry.dataset.item); // array of categories
+	  if (!entryCats.includes(filterState.item)) show = false;
 
-      entry.style.display = show ? "flex" : "none";
-    });
+    }
 
-    // Sort by timestamp
-    logEntries
-      .sort((a, b) => {
-        const tsA = parseInt(a.dataset.timestamp || "0");
-        const tsB = parseInt(b.dataset.timestamp || "0");
-        return filterState.sort === "desc" ? tsB - tsA : tsA - tsB;
-      })
-      .forEach(e => logContainer.appendChild(e));
+    entry.style.display = show ? "flex" : "none";
+  });
+
+  // Sort by timestamp
+  logEntries
+    .sort((a, b) => {
+      const tsA = parseInt(a.dataset.timestamp || "0");
+      const tsB = parseInt(b.dataset.timestamp || "0");
+      return filterState.sort === "desc" ? tsB - tsA : tsA - tsB;
+    })
+    .forEach(e => logContainer.appendChild(e));
+
+  // ⬇️ SUMMARY SWITCH (this is the missing link)
+  if (filterState.user === "all") {
+    summaryAll(currentData);
+  } else {
+    summaryPerPlayer(currentData, filterState.user);
   }
+}
+
 }
 
 
@@ -1744,21 +1842,39 @@ document.getElementById("toggleCompareBtn").onclick = () => {
   }
 };
 
-
 document.getElementById("loadBtn").onclick = async () => {
   const primary = primaryCalendar.getRange();
   if (!primary.from) return;
+  primaryCalendar.reset();
+
+  const startTs = buildTimestamp(primary.from, startTime.value);
+  const endTs   = buildTimestamp(primary.to, endTime.value);
+
+  const sameDay =
+    primary.from.toISOString().slice(0, 10) ===
+    primary.to.toISOString().slice(0, 10);
+
+  CURRENT_TIME_LABEL = sameDay
+    ? `${fmtDate(primary.from)} ${startTime.value} - ${endTime.value}`
+    : `${fmtDate(primary.from)} ${startTime.value} - ` +
+      `${fmtDate(primary.to)} ${endTime.value}`;
+
+/*document.getElementById("loadBtn").onclick = async () => {
+  const primary = primaryCalendar.getRange();
+  if (!primary.from) return;
+  primaryCalendar.reset();
 
   const startTs = buildTimestamp(primary.from, startTime.value);
   const endTs   = buildTimestamp(primary.to, endTime.value);
 
   CURRENT_TIME_LABEL =
-    `${fmtDate(primary.from)} ${startTime.value} → ` +
-    `${fmtDate(primary.to)} ${endTime.value}`;
+    `${fmtDate(primary.from)} ${startTime.value} - ` +
+    `${fmtDate(primary.to)} ${endTime.value}`;*/
 
   const raw = await loadLogs(primary.from, primary.to);
   const trimmed = trimDataByTime(raw, startTs, endTs);
 
+  currentData=trimmed;
   render(trimmed);
 
   if (comparisonMode) {
@@ -1767,7 +1883,7 @@ document.getElementById("loadBtn").onclick = async () => {
     const compEndTs   = buildTimestamp(compRange.to, compEndTime.value);
 
     COMPARE_TIME_LABEL =
-      `${fmtDate(compRange.from)} ${compStartTime.value} → ` +
+      `${fmtDate(compRange.from)} ${compStartTime.value} - ` +
       `${fmtDate(compRange.to)} ${compEndTime.value}`;
 
     const rawComp = await loadLogs(compRange.from, compRange.to);
