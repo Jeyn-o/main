@@ -128,6 +128,7 @@ a:visited {
   flex-direction: column;
   gap: 0;
   color: #ddd;
+  min-height:160px;
 }
 
 .summary-header {
@@ -156,6 +157,10 @@ a:visited {
 .summary-tabs.action-tabs {
   flex-wrap: nowrap;       /* single row */
 }
+
+.net-total.positive { color: #14e314; padding-left:4px; }
+.net-total.negative { color: #ff4a1f; padding-left:4px; }
+
 
 /* ----- Tab buttons (common for all rows) ----- */
 .summary-tabs button.tab {
@@ -492,6 +497,11 @@ button {
 
 
 </div>
+<div id="loadingScreen" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center;flex-direction:column;">
+  <div class="spinner"></div>
+  <p style="font-size:22px">>Loading data, please wait...</p>
+</div>
+
 <script>
 /* ================= CONFIG ================= */
 const LOG_BASE = "https://raw.githubusercontent.com/Jeyn-o/Armory_observer/main/logs";
@@ -550,6 +560,7 @@ function fmtDate(date) {
 
 const ACTION_LABELS = {
   donated: "Donated",
+  deposited: "Donated",
   used: "Used",
   filled: "Filled",
   loaned: "Loaned",
@@ -557,6 +568,25 @@ const ACTION_LABELS = {
   returned: "Returned",
   retrieved: "Retrieved"
 };
+
+
+// --- LOADING SCREEN ---
+function showLoadingScreen() {
+  const loader = document.getElementById("loadingScreen");
+  if (loader) loader.style.display = "flex"; // or remove 'hidden' class
+}
+
+function hideLoadingScreen() {
+  const loader = document.getElementById("loadingScreen");
+  if (loader) loader.style.display = "none"; // or add 'hidden' class
+  setLoadingText("Loading...");
+}
+
+function setLoadingText(msg) {
+  const loaderText = document.querySelector("#loadingScreen p");
+  if (loaderText) loaderText.textContent = msg;
+}
+
 
 
 // --- ITEM CATEGORY LOOKUP ---
@@ -576,7 +606,6 @@ function buildItemLookup() {
     }
   }
 
-  console.log("ITEM_LOOKUP ready:", ITEM_LOOKUP);
 }
 
 
@@ -768,7 +797,8 @@ async function detectAvailableDates() {
         monthSet.add(monthStr);
 
         // Save all available days
-        const daySet = new Set(daysArr.map(d => d.padStart(2, "0")));
+        const daySet = new Set(Array.isArray(daysArr.days) ? daysArr.days.map(d => d.padStart(2,"0")) : []);
+
         availability.daysByMonth.set(`${yearStr}-${monthStr}`, daySet);
       }
 
@@ -829,6 +859,7 @@ async function loadLogs(from, to){
     // Full month
 if(firstDay === 1 && lastDay === dim){
   const url = `${LOG_BASE}/${year}/${monthStr}/Month.json`;
+	setLoadingText(`Loading ${monthNames[monthStr-1]}...`);
 
   if(logCache[url]){
     //console.log(`Loaded Month ${monthStr} FULL from cache.`);
@@ -853,6 +884,7 @@ if(firstDay === 1 && lastDay === dim){
 const fetchPromises = monthDays.map(d=>{
   const dayStr = String(d.getUTCDate()).padStart(2,"0");
   const url = `${LOG_BASE}/${year}/${monthStr}/${dayStr}.json`;
+	setLoadingText(`Loading ${dayStr}.${monthStr}...`);
 
   if(logCache[url]){
     //console.log(`Loaded Month ${monthStr} Day ${dayStr} from cache.`);
@@ -873,9 +905,11 @@ const fetchPromises = monthDays.map(d=>{
 
 
     const results = await Promise.all(fetchPromises);
+	setLoadingText(`Merging data...`);
     results.forEach(data=>{ if(data) mergeInto(merged,data); });
-  }
 
+  }
+	setLoadingText(`Rendering data...`);
   return merged;
 }
 
@@ -957,8 +991,6 @@ function buildSummaryTree(events) {
 function renderSummary(tree, events, timeLabel) {
   const container = document.getElementById("summaries");
   container.innerHTML = "";
-  
-  console.log("renderSummary: tree:", tree, " events:", events, " timeLabel:", timeLabel); 
 
   // === HEADER ===
   const header = document.createElement("div");
@@ -988,11 +1020,34 @@ function renderSummary(tree, events, timeLabel) {
 
   const clearChildren = (el) => { while (el.firstChild) el.removeChild(el.firstChild); };
 
+  const PLUS_ACTIONS = new Set(["donated", "filled", "returned", "retrieved"]);
+  const MINUS_ACTIONS = new Set(["used", "loaned", "loaned_receive"]);
+
   const categories = Object.keys(tree).sort();
   categories.forEach((category, cIdx) => {
+    // Calculate net for category
+    let categoryNet = 0;
+    Object.keys(tree[category]).forEach(item => {
+      Object.entries(tree[category][item]).forEach(([action, users]) => {
+        const itemTotal = Object.values(users).reduce((sum, amt) => sum + amt, 0);
+        if (PLUS_ACTIONS.has(action)) categoryNet += itemTotal;
+        if (MINUS_ACTIONS.has(action)) categoryNet -= itemTotal;
+      });
+    });
+
     const catBtn = document.createElement("button");
     catBtn.className = "tab category-tab";
-    catBtn.textContent = category;
+    const displayName = category === "OC_items" ? "OC Items" : category;
+    catBtn.textContent = displayName;
+
+    // Add bracketed net
+    if (categoryNet !== 0) {
+      const netSpan = document.createElement("span");
+      netSpan.textContent = ` (${categoryNet > 0 ? "+" : ""}${categoryNet})`;
+      netSpan.style.color = categoryNet > 0 ? "green" : "red";
+      catBtn.appendChild(netSpan);
+    }
+
     if (cIdx === 0) catBtn.classList.add("active");
     categoryTabs.appendChild(catBtn);
 
@@ -1004,9 +1059,26 @@ function renderSummary(tree, events, timeLabel) {
       clearChildren(itemTabs);
       const items = Object.keys(tree[category]).sort();
       items.forEach((item, iIdx) => {
+        // Calculate net for item
+        let itemNet = 0;
+        Object.entries(tree[category][item]).forEach(([action, users]) => {
+          const itemTotal = Object.values(users).reduce((sum, amt) => sum + amt, 0);
+          if (PLUS_ACTIONS.has(action)) itemNet += itemTotal;
+          if (MINUS_ACTIONS.has(action)) itemNet -= itemTotal;
+        });
+
         const itemBtn = document.createElement("button");
         itemBtn.className = "tab item-tab";
         itemBtn.textContent = item;
+
+        // Add bracketed net
+        if (itemNet !== 0) {
+          const netSpan = document.createElement("span");
+		  netSpan.className = "net-total";
+		  netSpan.textContent = ` (${itemNet > 0 ? "+" : ""}${itemNet})`;
+          itemBtn.appendChild(netSpan);
+        }
+
         if (iIdx === 0) itemBtn.classList.add("active");
         itemTabs.appendChild(itemBtn);
 
@@ -1025,7 +1097,8 @@ function renderSummary(tree, events, timeLabel) {
 
             const actionBtn = document.createElement("button");
             actionBtn.className = "tab action-tab";
-            actionBtn.textContent = `${action} (${totalAmount})`;
+            const displayAction = ACTION_LABELS[action] || action; 
+            actionBtn.textContent = `${displayAction} (${totalAmount})`;
             if (aIdx === 0) actionBtn.classList.add("active");
             actionTabs.appendChild(actionBtn);
 
@@ -1036,7 +1109,7 @@ function renderSummary(tree, events, timeLabel) {
               // Display players sorted by amount descending
               clearChildren(playersWrap);
               const sortedPlayers = Object.entries(users)
-                .sort((a, b) => b[1] - a[1]); // [uid, amount]
+                .sort((a, b) => b[1] - a[1]);
 
               const row = document.createElement("div");
               row.className = "summary-players-row";
@@ -1152,12 +1225,12 @@ function summaryAll(data) {
 
 // === SINGLE CALENDAR RENDER ===
 function render(data) {
-console.log("DATA:",data);
   const out = document.getElementById("output");
   out.innerHTML = "";
+  
+  console.log(data);
 
   const events = flattenData(data);
-  //console.log("FLATTENED EVENTS", events);
 
 
   // === SUMMARY ===
@@ -1167,9 +1240,6 @@ console.log("DATA:",data);
   // Build + render structured summary
   const summaryTree = buildSummaryTree(events, ITEM_CATEGORIES);
   
-  console.log("render: summaryTree:", summaryTree, " - Made using buildSummaryTree(events, ITEM_CATEGORIES). events:", events, " ITEM_CATEGORIES: ", ITEM_CATEGORIES, ".");
-  //if we filter "events" here to be per-player, we maybe get the result already
-
   renderSummary(
     summaryTree,
     events,
@@ -1247,7 +1317,6 @@ function renderCompare(primaryData, compareData) {
 
 
 function renderCompactSummary(summaryTree, container) {
- console.log("NEW renderCompactSummary");
   container.innerHTML = "";
 
   let activeCategory = null;
@@ -1498,7 +1567,6 @@ async function loadFilterData() {
 
   // Build the lookup after items.json is loaded
   buildItemLookup();
-  console.log("ITEM_CATEGORIES", ITEM_CATEGORIES);
 
   // Now that ITEM_LOOKUP is ready, build filters
   //buildCategoryFilters();
@@ -1843,55 +1911,52 @@ document.getElementById("toggleCompareBtn").onclick = () => {
 };
 
 document.getElementById("loadBtn").onclick = async () => {
-  const primary = primaryCalendar.getRange();
-  if (!primary.from) return;
-  primaryCalendar.reset();
+  showLoadingScreen(); // <--- show loader immediately
 
-  const startTs = buildTimestamp(primary.from, startTime.value);
-  const endTs   = buildTimestamp(primary.to, endTime.value);
+  try {
+    const primary = primaryCalendar.getRange();
+    if (!primary.from) return;
+    primaryCalendar.reset();
 
-  const sameDay =
-    primary.from.toISOString().slice(0, 10) ===
-    primary.to.toISOString().slice(0, 10);
+    const startTs = buildTimestamp(primary.from, startTime.value);
+    const endTs   = buildTimestamp(primary.to, endTime.value);
 
-  CURRENT_TIME_LABEL = sameDay
-    ? `${fmtDate(primary.from)} ${startTime.value} - ${endTime.value}`
-    : `${fmtDate(primary.from)} ${startTime.value} - ` +
-      `${fmtDate(primary.to)} ${endTime.value}`;
+    const sameDay =
+      primary.from.toISOString().slice(0, 10) ===
+      primary.to.toISOString().slice(0, 10);
 
-/*document.getElementById("loadBtn").onclick = async () => {
-  const primary = primaryCalendar.getRange();
-  if (!primary.from) return;
-  primaryCalendar.reset();
+    CURRENT_TIME_LABEL = sameDay
+      ? `${fmtDate(primary.from)} ${startTime.value} - ${endTime.value}`
+      : `${fmtDate(primary.from)} ${startTime.value} - ${fmtDate(primary.to)} ${endTime.value}`;
 
-  const startTs = buildTimestamp(primary.from, startTime.value);
-  const endTs   = buildTimestamp(primary.to, endTime.value);
+    const raw = await loadLogs(primary.from, primary.to);
+    const trimmed = trimDataByTime(raw, startTs, endTs);
 
-  CURRENT_TIME_LABEL =
-    `${fmtDate(primary.from)} ${startTime.value} - ` +
-    `${fmtDate(primary.to)} ${endTime.value}`;*/
+    currentData = trimmed;
+	setLoadingText(`Rendering data...`);
+    render(trimmed);
 
-  const raw = await loadLogs(primary.from, primary.to);
-  const trimmed = trimDataByTime(raw, startTs, endTs);
+    if (comparisonMode) {
+      const compRange = compareCalendar.getRange();
+      const compStartTs = buildTimestamp(compRange.from, compStartTime.value);
+      const compEndTs   = buildTimestamp(compRange.to, compEndTime.value);
 
-  currentData=trimmed;
-  render(trimmed);
+      COMPARE_TIME_LABEL =
+        `${fmtDate(compRange.from)} ${compStartTime.value} - ` +
+        `${fmtDate(compRange.to)} ${compEndTime.value}`;
 
-  if (comparisonMode) {
-    const compRange = compareCalendar.getRange();
-    const compStartTs = buildTimestamp(compRange.from, compStartTime.value);
-    const compEndTs   = buildTimestamp(compRange.to, compEndTime.value);
+      const rawComp = await loadLogs(compRange.from, compRange.to);
+      const trimmedComp = trimDataByTime(rawComp, compStartTs, compEndTs);
 
-    COMPARE_TIME_LABEL =
-      `${fmtDate(compRange.from)} ${compStartTime.value} - ` +
-      `${fmtDate(compRange.to)} ${compEndTime.value}`;
+      RenderCompare(trimmed, trimmedComp);
+    }
 
-    const rawComp = await loadLogs(compRange.from, compRange.to);
-    const trimmedComp = trimDataByTime(rawComp, compStartTs, compEndTs);
-
-    RenderCompare(trimmed, trimmedComp);
+    toggleCalendar();
+  } catch (err) {
+    console.error("Error loading logs:", err);
+  } finally {
+    hideLoadingScreen(); // <--- hide loader no matter what
   }
-  toggleCalendar()
 };
 
 
