@@ -143,6 +143,7 @@ a:visited {
   gap: 0;                 /* no horizontal spacing between tabs */
   margin: 0;              /* remove vertical spacing between rows */
   overflow: hidden;       /* clip rounded corners properly */
+  margin:0 5px;
 }
 
 /* Specific tab row behavior */
@@ -158,8 +159,8 @@ a:visited {
   flex-wrap: nowrap;       /* single row */
 }
 
-.net-total.positive { color: #14e314; padding-left:4px; }
-.net-total.negative { color: #ff4a1f; padding-left:4px; }
+.net-total.positive { color: #14e314; padding-left:5px; }
+.net-total.negative { color: #ff4a1f; padding-left:5px; }
 
 
 /* ----- Tab buttons (common for all rows) ----- */
@@ -240,6 +241,7 @@ a:visited {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  margin:3px 7px;
 }
 
 .summary-players-row {
@@ -472,7 +474,7 @@ button {
   <button disabled id="toggleCompareBtn">Compare mode</button>
   <button style="margin-left:28px" id="loadBtn">Load Selected</button>
   
-  <span style="display:none" id="selectedRangeText"></span>
+  <span id="selectedRangeText"></span>
 </div>
 
 
@@ -483,10 +485,11 @@ button {
   <div class="calendar-container" id="compareCalendars" style="display:none;"></div>
 </div>
 
-<div>
-  <span>Start: <input type="time" id="startTime" value="00:00"></span>
-  <span style="margin-left:15px;">End: <input type="time" id="endTime" value="23:59"></span>
+<div><center>
+  <span><input type="time" id="startTime" value="00:00:00" step="1"></span>
+  <span> to <input type="time" id="endTime" value="23:59:59" step="1"></span></center>
 </div>
+
 
 <div id="comparisonTimes" style="display:none; margin-top:5px;">
   Comparison Start: <input type="time" id="compStartTime" value="00:00">
@@ -723,11 +726,12 @@ function trimDataByTime(data, fromTs, toTs){
 }
 
 function buildTimestamp(date, timeStr){
-  const [hh,mm] = timeStr.split(":").map(Number);
+  const [hh, mm, ss = 0] = timeStr.split(":").map(Number); // default seconds = 0
   const d = new Date(date);
-  d.setUTCHours(hh,mm,0,0);
+  d.setUTCHours(hh, mm, ss, 0); // set seconds
   return Math.floor(d.getTime()/1000);
 }
+
 
 /*  TIME TRIMMER  */
 /**
@@ -995,6 +999,7 @@ function renderSummary(tree, events, timeLabel) {
   // === HEADER ===
   const header = document.createElement("div");
   header.className = "summary-header";
+  header.style.whiteSpace = "pre-line";
   header.textContent = timeLabel;
   container.appendChild(header);
 
@@ -1041,12 +1046,13 @@ function renderSummary(tree, events, timeLabel) {
     catBtn.textContent = displayName;
 
     // Add bracketed net
-    if (categoryNet !== 0) {
-      const netSpan = document.createElement("span");
-      netSpan.textContent = ` (${categoryNet > 0 ? "+" : ""}${categoryNet})`;
-      netSpan.style.color = categoryNet > 0 ? "green" : "red";
-      catBtn.appendChild(netSpan);
-    }
+	if (categoryNet !== 0) {
+	  const netSpan = document.createElement("span");
+	  netSpan.className = `net-total ${categoryNet > 0 ? "positive" : "negative"}`;
+	  netSpan.textContent = ` (${categoryNet > 0 ? "+" : ""}${categoryNet})`;
+	  catBtn.appendChild(netSpan);
+	}
+
 
     if (cIdx === 0) catBtn.classList.add("active");
     categoryTabs.appendChild(catBtn);
@@ -1072,12 +1078,13 @@ function renderSummary(tree, events, timeLabel) {
         itemBtn.textContent = item;
 
         // Add bracketed net
-        if (itemNet !== 0) {
-          const netSpan = document.createElement("span");
-		  netSpan.className = "net-total";
-		  netSpan.textContent = ` (${itemNet > 0 ? "+" : ""}${itemNet})`;
-          itemBtn.appendChild(netSpan);
-        }
+		if (itemNet !== 0) {
+		  const netSpan = document.createElement("span");
+		  netSpan.className = `net-total ${itemNet > 0 ? "positive" : "negative"}`;
+		  netSpan.textContent = `   (${itemNet > 0 ? "+" : ""}${itemNet})`;
+		  itemBtn.appendChild(netSpan);
+		}
+
 
         if (iIdx === 0) itemBtn.classList.add("active");
         itemTabs.appendChild(itemBtn);
@@ -1204,7 +1211,7 @@ function summaryPerPlayer(data, player) {
 
   const summaryTree = buildSummaryTree(events, ITEM_CATEGORIES);
 
-  const newLabel = `${CURRENT_TIME_LABEL} -- ${getUserName(player).label}`;
+  const newLabel = `${CURRENT_TIME_LABEL}` + `\n` + `${getUserName(player).label}`;
 
   renderSummary(summaryTree, events, newLabel);
 }
@@ -1218,7 +1225,7 @@ function summaryAll(data) {
 
   const summaryTree = buildSummaryTree(events, ITEM_CATEGORIES);
 
-  const newLabel = `${CURRENT_TIME_LABEL}`;
+  const newLabel = `${CURRENT_TIME_LABEL}` + `\n\u00A0`;
 
   renderSummary(summaryTree, events, newLabel);
 }
@@ -1509,9 +1516,12 @@ function createCalendar(container, label) {
     });
 
     if (start) {
+	selectedRangeText.style.whiteSpace="pre";
       selectedRangeText.textContent =
         `${label}: ${start.toISOString().slice(0, 10)}` +
         (end ? ` to ${end.toISOString().slice(0, 10)}` : "");
+		selectedRangeText.textContent = `From  ${start.toISOString().slice(0, 10)}` +
+		(end ? `  to  ${end.toISOString().slice(0, 10)}` : "");
     }
   }
 
@@ -1926,8 +1936,8 @@ document.getElementById("loadBtn").onclick = async () => {
       primary.to.toISOString().slice(0, 10);
 
     CURRENT_TIME_LABEL = sameDay
-      ? `${fmtDate(primary.from)} ${startTime.value} - ${endTime.value}`
-      : `${fmtDate(primary.from)} ${startTime.value} - ${fmtDate(primary.to)} ${endTime.value}`;
+  ? `${fmtDate(primary.from)} ${startTime.value} - ${endTime.value}\n\u00A0 `
+  : `${fmtDate(primary.from)} ${startTime.value} - ${fmtDate(primary.to)} ${endTime.value}\n\u00A0 `;
 
     const raw = await loadLogs(primary.from, primary.to);
     const trimmed = trimDataByTime(raw, startTs, endTs);
@@ -1943,7 +1953,7 @@ document.getElementById("loadBtn").onclick = async () => {
 
       COMPARE_TIME_LABEL =
         `${fmtDate(compRange.from)} ${compStartTime.value} - ` +
-        `${fmtDate(compRange.to)} ${compEndTime.value}`;
+        `${fmtDate(compRange.to)} ${compEndTime.value}\n\u00A0`;
 
       const rawComp = await loadLogs(compRange.from, compRange.to);
       const trimmedComp = trimDataByTime(rawComp, compStartTs, compEndTs);
@@ -1955,7 +1965,7 @@ document.getElementById("loadBtn").onclick = async () => {
   } catch (err) {
     console.error("Error loading logs:", err);
   } finally {
-    hideLoadingScreen(); // <--- hide loader no matter what
+    hideLoadingScreen();
   }
 };
 
