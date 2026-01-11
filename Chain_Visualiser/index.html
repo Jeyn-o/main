@@ -69,6 +69,20 @@
 	font-color:black;
 	font-style: italic;
   }
+  th.asc::after { content: " ▲"; }
+  th.desc::after { content: " ▼"; }
+
+tbody.detailed-entry-group::before
+{
+  content: '';
+  display: block;
+  height: 15px;
+
+}
+.detailed-entry-group.hidden {
+    display: none !important;
+}
+
   </style>
  </head>
  <body>
@@ -88,5 +102,4 @@
   <label><input type="checkbox" data-target-class="td_multi" checked> Multipliers</label>
  </div>
  </body>
-
 </html>
