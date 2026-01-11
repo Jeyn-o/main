@@ -3,6 +3,11 @@ let membernames;
 const display_defends=false;
 const our_faction_id = 35840;
 let details = {};
+const our_faction_name = "Baby Champers";
+const BONUS_CHAINS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+let cFAD;
+const api_rate = 1000; // divide by 1000 for seconds
+
 
 let db;
 const dbName = "ChainVisualCache";
@@ -221,11 +226,11 @@ function formatMMSS(seconds) {
 }
 
 function toggle(id,which) {
-	console.log(`Running toggle(${id},${which})`);
-	const target = document.getElementById(id);
-	console.log(`Target element: ${target}`);
+	//console.log(`Running toggle(${id},${which})`);
+	const target = document.getElementById(id) ?? document.getElementById("custom");
+	//console.log(`Target element: ${target}`);
 	const subtarget = target.querySelector(`#${which}`);
-	console.log(`Subtarget element: ${subtarget}`);
+	//console.log(`Subtarget element: ${subtarget}`);
 	target.querySelector('#display-torn').style.display = "none";
 	target.querySelector('#display-detailed').style.display = "none";
 	target.querySelector('#display-timeline').style.display = "none";
@@ -380,7 +385,7 @@ async function fetchAllAttacks(url, apikey, combinedData = { attacks: [] }, upda
     const prevLink = data._metadata?.links?.prev;
 
     if (prevLink) {
-      await new Promise(res => setTimeout(res, 10000));
+      await new Promise(res => setTimeout(res, api_rate));
       return fetchAllAttacks(prevLink, apikey, combinedData, updateStatus, end, start);
     } else {
       return combinedData;
@@ -402,8 +407,8 @@ async function get_detailed_report(id) {
 
 	const cached = await loadFromIndexedDB(storeNames.details, id);
 	if (cached) {
-		console.log(`Loaded detailed report for chain ${id} from cache.`);
-		document.getElementById(`loadingMessage-${id}`).remove();
+		//console.log(`Loaded detailed report for chain ${id} from cache.`);
+		document.getElementById(`loadingMessage-${id}`).innerHTML="";
 		fullAttackList = cached.data; // ✅ only assign .data
 	} else {
 		const drepstart = targetElement.dataset.start;
@@ -428,11 +433,11 @@ async function get_detailed_report(id) {
 	}
 	if (details.details[id]) {
 		// exists already
-		console.log("details.details[id] already exists");
+		//console.log("details.details[id] already exists");
 	} else {
 		// create it
 		details.details[id] = fullAttackList;
-		console.log("details.details exists, but [id] did not. Created.");
+		//console.log("details.details exists, but [id] did not. Created.");
 	}
 	console.log(details);
 
@@ -486,7 +491,8 @@ async function get_detailed_report(id) {
 					break;
 			}
 			chainentry += `
-				<tr style="background-color:#84a4ff">
+			<tbody class="detailed-entry-group">
+				<tr style="background-color:#84a4ff" class="head-row">
 					<td>${r}</td>
 					<td>${hit.attacker?.name ? `<a href="https://www.torn.com/profiles.php?XID=${hit.attacker.id}">${hit.attacker.name}</a>` : "Someone"}</td>
 					<td style="background-color:${c}">${hit.result}</td>
@@ -509,7 +515,7 @@ async function get_detailed_report(id) {
 					<td>Chain timer</td>
 					<td rowspan="2"><a href="https://www.torn.com/loader.php?sid=attackLog&ID=${hit.code}">Link</a></td>
 				</tr>
-				<tr style="background-color:#84a4ff">
+				<tr style="background-color:#84a4ff" class="body-row">
 					<td>${TCT(hit.ended)}</td>
 					<td>${hit.attacker?.faction?.name ?? "-"}</td>
 					<td> vs </td>
@@ -534,7 +540,7 @@ async function get_detailed_report(id) {
 					<td>${prevhit ? formatMMSS(Math.max(0, 300 - (hit.ended - prevhit.ended))) : "N/A"}</td>
 
 				</tr>
-				<tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
+			</tbody>
 			`;
 		} else {
 			//continue;
@@ -557,7 +563,8 @@ async function get_detailed_report(id) {
 					break;
 			}
 			chainentry += `
-				<tr style="background-color:#c54545">
+			<tbody class="detailed-entry-group">
+				<tr style="background-color:#c54545" class="head-row">
 					<td>${r}</td>
 					<td>${hit.attacker?.name ? `<a href="https://www.torn.com/profiles.php?XID=${hit.attacker.id}">${hit.attacker.name}</a>` : "Someone"}</td>
 					<td style="background-color:${c}">${hit.result}</td>
@@ -580,7 +587,7 @@ async function get_detailed_report(id) {
 					<td>Chain timer</td>
 					<td rowspan="2"><a href="https://www.torn.com/loader.php?sid=attackLog&ID=${hit.code}">Link</a></td>
 				</tr>
-				<tr style="background-color:#c54545">
+				<tr style="background-color:#c54545" class="body-row">
 					<td>${TCT(hit.ended)}</td>
 					<td>${hit.attacker?.faction?.name ?? "-"}</td>
 					<td> vs </td>
@@ -605,7 +612,7 @@ async function get_detailed_report(id) {
 					<td>${prevhit ? formatMMSS(Math.max(0, 300 - (hit.ended - prevhit.ended))) : "N/A"}</td>
 
 				</tr>
-				<tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
+			</tbody>
 			`;
 			}	}
 	}
@@ -620,6 +627,9 @@ async function get_detailed_report(id) {
 			</table>
 		`;
 		target.append(entry);
+		
+		//init filiters
+		initDetailedFilters();
 	}
 
 
@@ -694,7 +704,8 @@ async function create_custom_detailed_report(start,end) {
 					break;
 			}
 			chainentry += `
-				<tr style="background-color:#84a4ff">
+			<tbody class="detailed-entry-group">
+				<tr style="background-color:#84a4ff" class="head-row">
 					<td>${r}</td>
 					<td>${hit.attacker?.name ? `<a href="https://www.torn.com/profiles.php?XID=${hit.attacker.id}">${hit.attacker.name}</a>` : "Someone"}</td>
 					<td style="background-color:${c}">${hit.result}</td>
@@ -717,7 +728,7 @@ async function create_custom_detailed_report(start,end) {
 					<td>Chain timer</td>
 					<td rowspan="2"><a href="https://www.torn.com/loader.php?sid=attackLog&ID=${hit.code}">Link</a></td>
 				</tr>
-				<tr style="background-color:#84a4ff">
+				<tr style="background-color:#84a4ff" class="body-row">
 					<td>${TCT(hit.ended)}</td>
 					<td>${hit.attacker?.faction?.name ?? "-"}</td>
 					<td> vs </td>
@@ -742,7 +753,8 @@ async function create_custom_detailed_report(start,end) {
 					<td>${prevhit ? formatMMSS(Math.max(0, 300 - (hit.ended - prevhit.ended))) : "N/A"}</td>
 
 				</tr>
-				<tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
+			</tbody>
+				
 			`;
 		} else {
 			//continue;
@@ -765,7 +777,8 @@ async function create_custom_detailed_report(start,end) {
 					break;
 			}
 			chainentry += `
-				<tr style="background-color:#c54545">
+			<tbody class="detailed-entry-group">
+				<tr style="background-color:#c54545" class="head-row">
 					<td>${r}</td>
 					<td>${hit.attacker?.name ? `<a href="https://www.torn.com/profiles.php?XID=${hit.attacker.id}">${hit.attacker.name}</a>` : "Someone"}</td>
 					<td style="background-color:${c}">${hit.result}</td>
@@ -788,7 +801,7 @@ async function create_custom_detailed_report(start,end) {
 					<td>Chain timer</td>
 					<td rowspan="2"><a href="https://www.torn.com/loader.php?sid=attackLog&ID=${hit.code}">Link</a></td>
 				</tr>
-				<tr style="background-color:#c54545">
+				<tr style="background-color:#c54545" class="body-row">
 					<td>${TCT(hit.ended)}</td>
 					<td>${hit.attacker?.faction?.name ?? "-"}</td>
 					<td> vs </td>
@@ -813,7 +826,7 @@ async function create_custom_detailed_report(start,end) {
 					<td>${prevhit ? formatMMSS(Math.max(0, 300 - (hit.ended - prevhit.ended))) : "N/A"}</td>
 
 				</tr>
-				<tr></tr><tr></tr><tr></tr><tr></tr><tr></tr><tr></tr>
+			</tbody>
 			`;
 			}
 		}
@@ -829,8 +842,20 @@ async function create_custom_detailed_report(start,end) {
 			</table>
 		`;
 		target.append(entry);
+		
+		//init filters
+		initDetailedFilters();
+
 	}
+	
+	// Pseudo retro Torn style
+	const perPlayerStats = buildPerPlayerStats(fullAttackList.attacks);
+	const tornTableHTML = renderCustomTornStyleTable(perPlayerStats);
+	document.querySelector("#custom #display-torn").innerHTML = tornTableHTML;
+
+	
 	fill_custom_chain_data(start,end,fullAttackList);
+	cFAD=fullAttackList;
 
 }
 
@@ -917,8 +942,8 @@ async function bypass_chain_list() {
 			return;
 		}
 
-		console.log("Start UNIX epoch (sec):", start);
-		console.log("End UNIX epoch (sec):", end);
+		//console.log("Start UNIX epoch (sec):", start);
+		//console.log("End UNIX epoch (sec):", end);
 
 		create_custom_report(start, end);
 	});
@@ -1020,13 +1045,241 @@ function buildCustomStats(data) {
 	return CUSTOM;
 }
 
+function buildPerPlayerStats(attacks) {
+    const stats = {};
+    
+    for (const atk of attacks) {
+        // Skip invalid or incomplete entries
+        if (!atk.attacker || !atk.defender) continue;
+        if (!atk.attacker.faction || atk.attacker.faction.name !== our_faction_name) continue;
+
+        const id = atk.attacker.id;
+        if (!stats[id]) {
+            stats[id] = {
+                id,
+                name: atk.attacker.name || "Unknown",
+                attempts: 0,
+                attacks: 0,
+                leave: 0,
+                mug: 0,
+                hospitalize: 0,
+                losses: 0,
+                escapes: 0,
+                draws: 0,
+                assists: 0,
+                overseas: 0,
+                retaliations: 0,
+                war: 0,
+                bonusHits: 0,
+                respect: 0,
+                baselineRespect: 0,
+				interrupted: 0,
+				timeout: 0
+            };
+        }
+
+        const s = stats[id];
+        s.attempts++;
+
+        // Normalize result
+        const result = (atk.result || "").toLowerCase();
+
+		const expected = ["attacked","mugged","hospitalized","lost","escape","stalemate","assist","interrupted","timeout"];
+		if(!expected.includes(result)) {console.log(`Alert: unique outcome detected: ${result}`)};
+
+        switch (result) {
+            case "attacked":
+                s.attacks++;
+                s.leave++;
+                break;
+            case "mugged":
+                s.attacks++;
+                s.mug++;
+                break;
+            case "hospitalized":
+                s.attacks++;
+                s.hospitalize++;
+                break;
+            case "lost":
+                s.losses++;
+                break;
+            case "escape":
+                s.escapes++;
+                break;
+            case "stalemate":
+                s.draws++;
+                break;
+            case "assist":
+                s.assists++;
+                break;
+			case "interrupted":
+				s.interrupted++;
+				break;
+			case "timeout":
+				s.timeout++;
+				break;
+        }
+
+		if (atk.modifiers?.overseas > 1) s.overseas++;
+		if (atk.modifiers?.retaliation > 1) s.retaliations++;
+        if (atk.is_ranked_war) s.war++;
+
+        const respectGain = atk.respect_gain || 0;
+        s.respect += respectGain;
+
+        // Bonus milestone logic
+        if (BONUS_CHAINS.includes(atk.chain)) {
+            s.bonusHits++;
+        } else {
+            s.baselineRespect += respectGain;
+        }
+    }
+
+    return Object.values(stats);
+}
+function renderCustomTornStyleTable(perPlayerStats) {
+    if (!perPlayerStats || perPlayerStats.length === 0) {
+        return `<div style="text-align:center;padding:10px;">No outgoing attacks found in this timeframe.</div>`;
+    }
+
+    // Calculate totals
+    const totals = {
+        attempts: 0, attacks: 0, leave: 0, mug: 0, hospitalize: 0,
+        losses: 0, escapes: 0, draws: 0, assists: 0, overseas: 0,
+        retaliations: 0, war: 0, bonusHits: 0, respect: 0, baselineRespect: 0,
+		interrupted: 0, timeout: 0
+    };
+
+    for (const s of perPlayerStats) {
+        totals.attempts += s.attempts;
+        totals.attacks += s.attacks;
+        totals.leave += s.leave;
+        totals.mug += s.mug;
+        totals.hospitalize += s.hospitalize;
+        totals.losses += s.losses;
+        totals.escapes += s.escapes;
+        totals.draws += s.draws;
+        totals.assists += s.assists;
+        totals.overseas += s.overseas;
+        totals.retaliations += s.retaliations;
+        totals.war += s.war;
+        totals.bonusHits += s.bonusHits;
+        totals.respect += s.respect;
+        totals.baselineRespect += s.baselineRespect;
+		totals.interrupted += s.interrupted;
+		totals.timeout += s.timeout;
+    }
+
+    let html = `
+    <table class="chainTable" style="width:100%;border-collapse:collapse;text-align:center;">
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th title="Contains all actions including assists">Attempts</th>
+                <th title="Contains: Attacked, Mugged, Hospitalized, Leave">Attacks</th>
+                <th>Leave</th>
+                <th>Mug</th>
+                <th>Hospitalize</th>
+                <th>Losses</th>
+                <th>Escapes</th>
+                <th>Draws</th>
+				<th>Interrupted</th>
+				<th>Timeout</th>
+                <th>Assists</th>
+                <th>Overseas</th>
+                <th>Retaliations</th>
+                <th>War Hits</th>
+                <th>Bonus Hits</th>
+                <th>Respect</th>
+                <th title="Respect minus bonus hits">Baseline Respect</th>
+            </tr>
+        </thead>
+        <tbody>`;
+
+    // Total row
+    html += `
+        <tr class="total" style="font-weight:bold;">
+            <td>Total</td>
+            <td>${totals.attempts}</td>
+            <td>${totals.attacks}</td>
+            <td>${totals.leave}</td>
+            <td>${totals.mug}</td>
+            <td>${totals.hospitalize}</td>
+            <td>${totals.losses}</td>
+            <td>${totals.escapes}</td>
+            <td>${totals.draws}</td>
+			<td>${totals.interrupted}</td>
+			<td>${totals.timeout}</td>
+            <td>${totals.assists}</td>
+            <td>${totals.overseas}</td>
+            <td>${totals.retaliations}</td>
+            <td>${totals.war}</td>
+            <td>${totals.bonusHits}</td>
+            <td>${Math.floor(totals.respect)}</td>
+            <td>${Math.floor(totals.baselineRespect)}</td>
+        </tr>`;
+
+    // Player rows
+    for (const s of perPlayerStats.sort((a, b) => b.respect - a.respect)) {
+        html += `
+        <tr>
+            <td><a href="https://www.torn.com/profiles.php?XID=${s.id}" target="_blank">${s.name}</a></td>
+            <td>${s.attempts}</td>
+            <td>${s.attacks}</td>
+            <td>${s.leave}</td>
+            <td>${s.mug}</td>
+            <td>${s.hospitalize}</td>
+            <td>${s.losses}</td>
+            <td>${s.escapes}</td>
+            <td>${s.draws}</td>
+			<td>${s.interrupted}</td>
+			<td>${s.timeout}</td>
+            <td>${s.assists}</td>
+            <td>${s.overseas}</td>
+            <td>${s.retaliations}</td>
+            <td>${s.war}</td>
+            <td>${s.bonusHits}</td>
+            <td>${Math.floor(s.respect)}</td>
+            <td>${Math.floor(s.baselineRespect)}</td>
+        </tr>`;
+    }
+
+    html += `
+		<tr>Nonhitters not available due to nature of custom reports.</tr>
+        </tbody>
+    </table>`;
+
+    return html;
+}
+
 
 async function fill_custom_chain_data(start,end,FAD) {
-	console.log("Full attack data available to fill_custom_chain_data:");
-	console.log(FAD);
+	//console.log("Full attack data available to fill_custom_chain_data:");
+	//console.log(FAD);
 	const CUSTOM = buildCustomStats(FAD.attacks);
-	console.log("CUSTOM:");
-	console.log(CUSTOM);
+	//console.log("CUSTOM:");
+	//console.log(CUSTOM);
+	// --- Format bonuses into HTML before defining header ---
+	let bonusHTML = "";
+
+	if (CUSTOM.bonuses && Object.keys(CUSTOM.bonuses).length > 0) {
+		const steps = Object.keys(CUSTOM.bonuses).map(Number).sort((a, b) => a - b);
+
+		for (const step of steps) {
+			const players = CUSTOM.bonuses[step];
+			const names = players.length ? players.join(", ") : "—";
+
+			bonusHTML += `
+            <td style="vertical-align:top; padding:6px; border:1px solid #444;">
+                <div style="font-weight:bold; padding:4px;">${step}</div>
+                <div style="padding:4px;">${names}</div>
+            </td>
+        `;
+		}
+	} else {
+		bonusHTML = `<tr></tr>`;
+	}
+
 	const header = `
 	<table border="2" style="border-collapse: collapse; text-align:center;width:100%;">
 	  <thead>
@@ -1044,7 +1297,7 @@ async function fill_custom_chain_data(start,end,FAD) {
         <td>${TCT(start)}</td>
         <td>${TCT(end)}</td>
 		<td>${formatDuration(start,end)}</td>
-        <td>${CUSTOM.respectRounded}</td>
+        <td>${Math.floor(CUSTOM.respectRounded)}</td>
         <td>${CUSTOM.lengthRounded}</td>
 	  </tbody>
     </table>
@@ -1067,13 +1320,12 @@ async function fill_custom_chain_data(start,end,FAD) {
     </table>
 	<table border="2" style="border-collapse: collapse; text-align:center;width:100%;">
 	  <tbody>
-	    ${CUSTOM.bonuses}
+	    ${bonusHTML}
 	  </tbody>
     </table>
 	`;
 	var el = document.getElementById("custom");
 	el.innerHTML = header + el.innerHTML;
-
 }
 
 async function create_custom_report(start,end) {
@@ -1131,7 +1383,7 @@ async function create_custom_report(start,end) {
 	</div>
 	
 	<div id="display-timeline" style="display:none";>
-		WIP
+		<button onclick="generate_custom_timeline();">Generate</button>
 	</div>
 
 	<br>`;
@@ -1182,9 +1434,9 @@ async function generate_chain_list(response) {
     const keyToCheck = (chain.id).toString();  // Ensure key is a string
     const exists = await checkKeyExists(storeNames.chains, keyToCheck);  // Check if the key exists in IndexedDB
 	if ( exists ) {
-		console.log(`found ${keyToCheck} in db chains`);
+		//console.log(`found ${keyToCheck} in db chains`);
 	} else {
-		console.log(`could not find ${keyToCheck} in db chains`);
+		//console.log(`could not find ${keyToCheck} in db chains`);
 	}
 
     const respectRounded = Math.floor(chain.respect);
@@ -1222,7 +1474,7 @@ async function select_chains() {
   
   
 
-  console.log('Selected CIDs:', selectedCIDs);
+  //console.log('Selected CIDs:', selectedCIDs);
   document.querySelector('#body').innerHTML = ``;
   document.querySelector('#submit_selected').disabled = true;
   for(var i=0;i<selectedCIDs.length;i++) {
@@ -1298,13 +1550,13 @@ async function select_chains() {
           <th>Length</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody><tr>
 	    <td>${chaindata.id}</td>
         <td>${TCT(chaindata.start)}</td>
         <td>${TCT(chaindata.end)}</td>
 		<td>${formatDuration(chaindata.start,chaindata.end)}</td>
         <td>${respectRounded}</td>
-        <td>${lengthRounded}</td>
+        <td>${lengthRounded}</td></tr>
 	  </tbody>
     </table>
 	<table border="2" style="border-collapse: collapse; text-align:center;width:100%;">
@@ -1380,8 +1632,8 @@ async function select_chains() {
       </table>
 	<br>`;
 	document.querySelector('#body').appendChild(newChainBlock);
-	console.log("Chaindata:");
-	console.log(chaindata);
+	//console.log("Chaindata:");
+	//console.log(chaindata);
   }
   document.querySelector('#submit_selected').style.display = "none";
   
@@ -1552,6 +1804,89 @@ async function renderTimeline(cid, chaindata, timelineContainer) {
     targetElement.appendChild(membernamesDropdown);
 }
 
+async function generate_custom_timeline() {
+	const containerId='custom';
+	const attackData=cFAD;
+    const targetElement = document.getElementById(containerId);
+    if (!targetElement) return;
+
+    const start = parseInt(targetElement.dataset.start, 10);
+    const end = parseInt(targetElement.dataset.end, 10);
+
+    // Create Timeline Container
+    const timelineContainer = document.createElement('div');
+    timelineContainer.id = `timeline-${containerId}`;
+    targetElement.appendChild(timelineContainer);
+
+    // Create the timeline bar
+    const timelineBar = document.createElement('div');
+    timelineBar.style.position = 'relative';
+    timelineBar.style.width = '100%';
+    timelineBar.style.height = '50px';
+    timelineBar.style.background = '#f0f0f0';
+    timelineBar.style.border = '1px solid #ccc';
+    timelineContainer.appendChild(timelineBar);
+
+    // Filter events
+    const validResults = ["Attacked", "Mugged", "Hospitalized"];
+    attackData.attacks.forEach(attack => {
+        if (!validResults.includes(attack.result)) return;
+
+        const eventTime = attack.ended;
+        if (!eventTime || eventTime < start || eventTime > end) return;
+
+        const eventPosition = ((eventTime - start) / (end - start)) * 100;
+
+        // Create a thin vertical line
+        const eventLine = document.createElement('div');
+        eventLine.style.position = 'absolute';
+        eventLine.style.left = `${eventPosition}%`;
+        eventLine.style.top = '15%';         // Slightly inset from top
+        eventLine.style.height = '70%';      // Not full height, looks nicer
+        eventLine.style.width = '2px';
+        eventLine.style.borderRadius = '1px';
+        eventLine.style.opacity = '0.9';
+
+        // Determine color based on defender faction
+        const defenderFaction = attack.defender?.faction?.name || "Unknown";
+        eventLine.style.backgroundColor =
+            (defenderFaction === our_faction_name) ? 'red' : 'green';
+
+        // Determine attacker/defender names with fallbacks
+        const attackerName = attack.attacker?.name || "Someone";
+        const defenderName = attack.defender?.name || "Someone";
+
+        // Tooltip
+        const tooltip = document.createElement('div');
+        tooltip.innerHTML = `
+            <strong>${attackerName}</strong> → <strong>${defenderName}</strong><br>
+            <em>${attack.result}</em>
+        `;
+        tooltip.style.position = 'absolute';
+        tooltip.style.bottom = '55px'; // Show above the timeline
+        tooltip.style.left = '50%';
+        tooltip.style.transform = 'translateX(-50%)';
+        tooltip.style.visibility = 'hidden';
+        tooltip.style.background = '#333';
+        tooltip.style.color = '#fff';
+        tooltip.style.padding = '5px';
+        tooltip.style.borderRadius = '5px';
+        tooltip.style.whiteSpace = 'nowrap';
+        tooltip.style.fontSize = '12px';
+        tooltip.style.zIndex = '10';
+        eventLine.appendChild(tooltip);
+
+        // Tooltip hover behavior
+        eventLine.onmouseover = () => tooltip.style.visibility = 'visible';
+        eventLine.onmouseout = () => tooltip.style.visibility = 'hidden';
+
+        // Append to timeline
+        timelineBar.appendChild(eventLine);
+    });
+}
+
+
+
 // Highlight events for a specific member
 function highlightMemberEvents(cid, memberName) {
     const events = document.querySelectorAll(`#timeline-${cid} .event-circle`);
@@ -1582,11 +1917,416 @@ function toggleTimelineView(cid) {
 }
 
 
+document.addEventListener("click", function (e) {
+  const headerCell = e.target.closest("th");
+  if (!headerCell) return;
+
+  // Hardcode non-sortable headers by text
+  const nonSortableHeaders = ["Chain ID", "Start Time", "End Time", "Duration"];
+  if (nonSortableHeaders.includes(headerCell.textContent.trim())) return;
+
+  const table = headerCell.closest("table");
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  if (!tbody) return;
+
+  const colIndex = Array.from(headerCell.parentNode.children).indexOf(headerCell);
+
+  // Determine sort direction
+  const isSameColumn = headerCell.classList.contains("asc") || headerCell.classList.contains("desc");
+  const isAscending = isSameColumn ? !headerCell.classList.contains("asc") : true;
+  const direction = isAscending ? 1 : -1;
+
+  // Reset header states
+  table.querySelectorAll("th").forEach(th => th.classList.remove("asc", "desc"));
+  headerCell.classList.add(isAscending ? "asc" : "desc");
+
+  // Separate total row
+  const rows = Array.from(tbody.querySelectorAll("tr")).filter(row => !row.classList.contains("total"));
+  const totalRow = tbody.querySelector("tr.total");
+
+  // Sort rows
+  rows.sort((a, b) => {
+    const cellA = a.cells[colIndex]?.textContent.trim() || "";
+    const cellB = b.cells[colIndex]?.textContent.trim() || "";
+
+    const numA = parseFloat(cellA);
+    const numB = parseFloat(cellB);
+
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return (numA - numB) * direction;
+    }
+    return cellA.localeCompare(cellB) * direction;
+  });
+
+  // Rebuild tbody
+  rows.forEach(row => tbody.appendChild(row));
+  if (totalRow) tbody.prepend(totalRow); // Keep total on top
+});
+
+function initDetailedFilters() {
+    injectFilterUI();
+
+    // Find correct report container for this filter UI
+	let container = null;
+	// 1. Filter UI lives in #footer.
+	// Find the detailed_entry *just before* the footer.
+	const footer = document.getElementById("footer");
+	if (footer) {
+		const previousEntry = footer.previousElementSibling;
+		if (previousEntry && previousEntry.classList.contains("detailed_entry")) {
+			container = previousEntry.querySelector("#display-detailed");
+		}
+	}
+	// 2. If still not found, fall back to the last detailed_entry on the page.
+	if (!container) {
+		const allEntries = document.querySelectorAll(".detailed_entry");
+		const lastEntry = allEntries[allEntries.length - 1];
+		if (lastEntry) {
+			container = lastEntry.querySelector("#display-detailed");
+		}
+	}
+	// 3. Final fallback (should never be needed anymore)
+	if (!container) {
+		container = document.querySelector("#display-detailed");
+	}
+	if (!container) return;
+
+
+
+    const table = container.querySelector("table");
+    if (!table) return;
+
+    // Build row pairs from each tbody.detailed-entry-group
+    const entryTBodies = Array.from(table.querySelectorAll("tbody.detailed-entry-group"));
+    const rowPairs = entryTBodies.map(tb => {
+        const rows = tb.querySelectorAll("tr");
+        if (rows.length < 2) return null;
+        const [head, body] = rows;
+        head.classList.add("head-row");
+        body.classList.add("body-row");
+        return { tb, head, body };
+    }).filter(Boolean);
+
+    const totalEntries = rowPairs.length;
+    const loadingMsg = getLoadingMessageElement();
+
+    // Hook up UI
+    document.getElementById("filter-apply").onclick = applyFilters;
+    document.getElementById("filter-clear").onclick = clearFilters;
+
+    //applyFilters();
+
+    // Utilities
+    function getColText(row, index) {
+        const td = row.querySelectorAll("td")[index];
+        return td ? td.textContent.trim() : "";
+    }
+
+    function textToBool(t) {
+        t = t.toLowerCase();
+        return (t === "true" || t === "1" || t === "yes");
+    }
+
+    function timeToSec(t) {
+        if (!t || !t.includes(":")) return null;
+        const [m, s] = t.split(":").map(x => parseInt(x));
+        return m * 60 + s;
+    }
+
+    /*function applyFilters() {
+    const name1 = document.getElementById("filter-name1").value.trim().toLowerCase();
+    const name2 = document.getElementById("filter-name2").value.trim().toLowerCase();
+    const faction = document.getElementById("filter-faction").value.trim().toLowerCase();
+    const respectType = document.getElementById("filter-respect-type").value;
+    const respectVal = parseFloat(document.getElementById("filter-respect-value").value);
+    const fStealth = document.getElementById("filter-stealth").value;
+    const fWar = document.getElementById("filter-war").value;
+    const fRaid = document.getElementById("filter-raid").value;
+    const fInt = document.getElementById("filter-interrupted").value;
+    const effectsStr = document.getElementById("filter-effects").value.trim().toLowerCase();
+    const ctComp = document.getElementById("filter-ct-comparator").value;
+    const ctVal = timeToSec(document.getElementById("filter-ct-value").value);
+    const typeFilter = document.getElementById("filter-type").value;
+
+    let visibleCount = 0;
+
+    rowPairs.forEach(({ tb, head, body }, i) => {
+        const htd = head.querySelectorAll("td");
+        const btd = body.querySelectorAll("td");
+
+        // Column mapping
+        const attacker = htd[1]?.textContent.toLowerCase() || "";
+        const defender = htd[3]?.textContent.toLowerCase() || "";
+        const attackerFaction = btd[1]?.textContent.toLowerCase() || "";
+        const defenderFaction = btd[3]?.textContent.toLowerCase() || "";
+        const respect = parseFloat(btd[4]?.textContent || "0");
+        const stealth = textToBool(btd[5]?.textContent || "");
+        const war = textToBool(btd[6]?.textContent || "");
+        const raid = textToBool(btd[7]?.textContent || "");
+        const interrupt = textToBool(btd[8]?.textContent || "");
+        const effects = btd[9]?.textContent.toLowerCase() || "";
+        const chainTimer = btd[19]?.textContent.trim() || "";
+        const ctSec = timeToSec(chainTimer);
+        const ourFaction = our_faction_name.toLowerCase();
+        const isAtk = attackerFaction === ourFaction;
+        const isDef = defenderFaction === ourFaction;
+
+        // FILTERS
+        let hideEntry = false;
+
+        if (name1 && !(attacker.includes(name1) || defender.includes(name1))) hideEntry = true;
+        if (name2 && !(attacker.includes(name2) || defender.includes(name2))) hideEntry = true;
+        if (faction && !(attackerFaction.includes(faction) || defenderFaction.includes(faction))) hideEntry = true;
+        if (typeFilter === "atk" && !isAtk) hideEntry = true;
+        if (typeFilter === "def" && !isDef) hideEntry = true;
+
+        if (respectType !== "ignore" && !isNaN(respectVal)) {
+            if (respectType === "gt" && !(respect > respectVal)) hideEntry = true;
+            if (respectType === "lt" && !(respect < respectVal)) hideEntry = true;
+        }
+
+        if (fStealth !== "ignore" && stealth !== (fStealth === "yes")) hideEntry = true;
+        if (fWar !== "ignore" && war !== (fWar === "yes")) hideEntry = true;
+        if (fRaid !== "ignore" && raid !== (fRaid === "yes")) hideEntry = true;
+        if (fInt !== "ignore" && interrupt !== (fInt === "yes")) hideEntry = true;
+        if (effectsStr && !effects.includes(effectsStr)) hideEntry = true;
+
+        if (ctComp !== "ignore") {
+            if (ctSec === null || ctVal === null) hideEntry = true;
+            if (ctComp === "lt" && !(ctSec < ctVal)) hideEntry = true;
+            if (ctComp === "gt" && !(ctSec > ctVal)) hideEntry = true;
+        }
+
+        // ✅ Toggle tbody display correctly
+		console.log("Before hideEntry, check if tb is connected");
+		console.log(tb.isConnected); // true if in DOM
+        if (hideEntry) {
+            //tb.style.display = "none";
+			//tb.classList.add("hidden");
+			    tb.style.setProperty("display", "none", "important");
+				tb.remove();
+            console.log(`Hiding entry #${i + 1}: ${attacker} vs ${defender}`);
+			console.log("Should be the following object:");
+			console.log(tb);
+			console.log("-");
+        } else {
+            //tb.style.display = "table-row-group"; // force proper tbody display
+			//tb.classList.remove("hidden");
+			    tb.style.setProperty("display", "table-row-group", "important");
+            visibleCount++;
+            console.log(`Showing entry #${i + 1}: ${attacker} vs ${defender}`);
+			console.log("Should be the following object:");
+			console.log(tb);
+			console.log("-");
+        }
+    });
+	if(document.getElementById("loadingMessage-custom")) {
+		document.getElementById("loadingMessage-custom").innerHTML = "Fuck!";
+		document.getElementById("loadingMessage-custom").innerHTML = `Showing ${visibleCount} of ${totalEntries}`;
+	};
+    // ✅ Update the loading message
+    if (loadingMsg && loadingMsg instanceof HTMLElement) {
+        loadingMsg.innerHTML = `Showing ${visibleCount} of ${totalEntries} attacks`;
+		console.log("Loading message : ");
+		console.log(loadingMsg);
+		console.log(`Updated filter counter to ${visibleCount} / ${totalEntries}`);
+    }
+	}
+*/
+	
+function applyFilters() {
+    const name1 = document.getElementById("filter-name1").value.trim().toLowerCase();
+    const name2 = document.getElementById("filter-name2").value.trim().toLowerCase();
+    const faction = document.getElementById("filter-faction").value.trim().toLowerCase();
+    const respectType = document.getElementById("filter-respect-type").value;
+    const respectVal = parseFloat(document.getElementById("filter-respect-value").value);
+    const fStealth = document.getElementById("filter-stealth").value;
+    const fWar = document.getElementById("filter-war").value;
+    const fRaid = document.getElementById("filter-raid").value;
+    const fInt = document.getElementById("filter-interrupted").value;
+    const effectsStr = document.getElementById("filter-effects").value.trim().toLowerCase();
+    const ctComp = document.getElementById("filter-ct-comparator").value;
+    const ctVal = timeToSec(document.getElementById("filter-ct-value").value);
+    const typeFilter = document.getElementById("filter-type").value;
+
+    let visibleCount = 0;
+
+    // ✅ Grab the live chain div (meta or custom) and attached TBs
+    const chainDiv = document.querySelector("#body > div[id]:not(#display-detailed)");
+    const rowPairs = Array.from(chainDiv.querySelectorAll(".detailed_entry tbody")).map(tb => ({
+        tb,
+        head: tb.querySelector(".head-row"),
+        body: tb.querySelector(".body-row")
+    }));
+
+    rowPairs.forEach(({ tb, head, body }, i) => {
+        const htd = head.querySelectorAll("td");
+        const btd = body.querySelectorAll("td");
+
+        // Column mapping
+        const attacker = htd[1]?.textContent.toLowerCase() || "";
+        const defender = htd[3]?.textContent.toLowerCase() || "";
+        const attackerFaction = btd[1]?.textContent.toLowerCase() || "";
+        const defenderFaction = btd[3]?.textContent.toLowerCase() || "";
+        const respect = parseFloat(btd[4]?.textContent || "0");
+        const stealth = textToBool(btd[5]?.textContent || "");
+        const war = textToBool(btd[6]?.textContent || "");
+        const raid = textToBool(btd[7]?.textContent || "");
+        const interrupt = textToBool(btd[8]?.textContent || "");
+        const effects = btd[9]?.textContent.toLowerCase() || "";
+        const chainTimer = btd[19]?.textContent.trim() || "";
+        const ctSec = timeToSec(chainTimer);
+        const ourFaction = our_faction_name.toLowerCase();
+        const isAtk = attackerFaction === ourFaction;
+        const isDef = defenderFaction === ourFaction;
+
+        // FILTERS
+        let hideEntry = false;
+
+        if (name1 && !(attacker.includes(name1) || defender.includes(name1))) hideEntry = true;
+        if (name2 && !(attacker.includes(name2) || defender.includes(name2))) hideEntry = true;
+        if (faction && !(attackerFaction.includes(faction) || defenderFaction.includes(faction))) hideEntry = true;
+        if (typeFilter === "atk" && !isAtk) hideEntry = true;
+        if (typeFilter === "def" && !isDef) hideEntry = true;
+
+        if (respectType !== "ignore" && !isNaN(respectVal)) {
+            if (respectType === "gt" && !(respect > respectVal)) hideEntry = true;
+            if (respectType === "lt" && !(respect < respectVal)) hideEntry = true;
+        }
+
+        if (fStealth !== "ignore" && stealth !== (fStealth === "yes")) hideEntry = true;
+        if (fWar !== "ignore" && war !== (fWar === "yes")) hideEntry = true;
+        if (fRaid !== "ignore" && raid !== (fRaid === "yes")) hideEntry = true;
+        if (fInt !== "ignore" && interrupt !== (fInt === "yes")) hideEntry = true;
+        if (effectsStr && !effects.includes(effectsStr)) hideEntry = true;
+
+        if (ctComp !== "ignore") {
+            if (ctSec === null || ctVal === null) hideEntry = true;
+            if (ctComp === "lt" && !(ctSec < ctVal)) hideEntry = true;
+            if (ctComp === "gt" && !(ctSec > ctVal)) hideEntry = true;
+        }
+
+        // ✅ Toggle tbody display correctly on live DOM
+        if (hideEntry) {
+            tb.style.setProperty("display", "none", "important");
+            console.log(`Hiding entry #${i + 1}: ${attacker} vs ${defender}`);
+        } else {
+            tb.style.setProperty("display", "table-row-group", "important");
+            visibleCount++;
+            console.log(`Showing entry #${i + 1}: ${attacker} vs ${defender}`);
+        }
+    });
+
+    // ✅ Update the loading message
+    const loadingMsg = document.getElementById("loadingMessage-custom") || document.getElementById("loadingMessage");
+    if (loadingMsg instanceof HTMLElement) {
+        loadingMsg.innerHTML = `Showing ${visibleCount} of ${rowPairs.length} attacks`;
+        console.log("Updated loading message:", loadingMsg.innerHTML);
+    }
+}
+
+
+	
+    function clearFilters() {
+        document.querySelectorAll("#detailed-filters input").forEach(i => i.value = "");
+        document.querySelectorAll("#detailed-filters select").forEach(s => s.value = "ignore");
+        document.getElementById("filter-type").value = "both";
+        applyFilters();
+    }
+
+    function getLoadingMessageElement() {
+        const local = container.querySelector("[id^='loadingMessage-']");
+        if (local) return local;
+        const custom = document.getElementById("loadingMessage-custom");
+        if (custom) return custom;
+        return { innerHTML: "" };
+    }
+}
+
+function injectFilterUI() {
+    if (document.getElementById("detailed-filters")) return; // prevent duplicates
+
+    const footer = document.getElementById("footer");
+    const filterUI = document.createElement("div");
+    filterUI.id = "detailed-filters";
+    filterUI.style.marginTop = "10px";
+    filterUI.style.padding = "10px";
+    filterUI.style.borderTop = "1px solid #333";
+
+    filterUI.innerHTML = `
+<div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+<label>Name #1: <input type="text" id="filter-name1" /></label>
+<label>Name #2: <input type="text" id="filter-name2" /></label>
+<label>Opponent Faction: <input type="text" id="filter-faction" /></label>
+<label>Respect: <select id="filter-respect-type">
+<option value="ignore">Ignore</option>
+<option value="gt">&gt;</option>
+<option value="lt">&lt;</option>
+</select>
+<input type="number" id="filter-respect-value" style="width:70px;" /></label>
+<label>Stealth: <select id="filter-stealth">
+<option value="ignore">Ignore</option>
+<option value="yes">Yes</option>
+<option value="no">No</option>
+</select></label>
+<label>War: <select id="filter-war">
+<option value="ignore">Ignore</option>
+<option value="yes">Yes</option>
+<option value="no">No</option>
+</select></label>
+<label>Raid: <select id="filter-raid">
+<option value="ignore">Ignore</option>
+<option value="yes">Yes</option>
+<option value="no">No</option>
+</select></label>
+<label>Interrupted: <select id="filter-interrupted">
+<option value="ignore">Ignore</option>
+<option value="yes">Yes</option>
+<option value="no">No</option>
+</select></label>
+<label>Effects contains: <input type="text" id="filter-effects" /></label>
+<label>Chain Timer: <select id="filter-ct-comparator">
+<option value="ignore">Ignore</option>
+<option value="lt">&lt;</option>
+<option value="gt">&gt;</option>
+</select>
+<input type="text" id="filter-ct-value" placeholder="MM:SS" style="width:60px;" /></label>
+<label>Type: <select id="filter-type">
+<option value="both">Both</option>
+<option value="atk">Our Attacks</option>
+<option value="def">Our Defends</option>
+</select></label>
+<button id="filter-apply">Apply</button>
+<button id="filter-clear">Clear</button>
+</div>
+`;
+
+    footer.appendChild(filterUI);
+}
 
 
 
 
 
-
+setTimeout(() => {
+document.getElementById("body").innerHTML+=`
+<h3>Current Api rate: 1/s</h3><br>
++Added custom tornstyle overview
+<br>
++Added sortable table headers
+<br>
+*Need to add option to remove localstorage and add disclaimer
+<br>
+*Need to add filters (name, respect >/< etc)
+<br>
+*Need a better calendar picking for custom times
+<br>
+*Make API rate modular
+<br>
+*Make custom reports saveable?
+<br>
+`;
+},10);
 
 
