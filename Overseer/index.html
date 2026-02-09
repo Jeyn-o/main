@@ -207,6 +207,16 @@ body {
     font-family: Arial, sans-serif;
     margin: 20px;
 }
+a {
+	color: #74c0fc;
+}
+a:hover {
+	color: #a5d8ff;
+}
+a:visited {
+    color: #74c0fc;
+}
+
 
 /* API input */
 #api_input h4 {
@@ -251,7 +261,7 @@ body {
 </head>
 <body>
 <div id="api_input">
-<h4>Enter a limited API key:</h4>
+<h4>Enter a <a title="To your API keys" href="https://www.torn.com/preferences.php#tab=api">limited API key</a>:</h4>
 <input type="text" id="api"></input><button onclick="submit_api()">Submit</button><br>
 <br>This script will make one API call every second or every other second, you can choose.<br>
 <br>Torn allows 100 calls per minute, if you're using other services that make a lot of API calls, use low-latency mode.<br>
