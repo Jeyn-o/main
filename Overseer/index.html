@@ -3,8 +3,14 @@
 <script>
 const api_url = 'https://api.torn.com/v2/faction/members?striptags=true&key=';
 let apikey = '';
+let lastCallTime = null;
+let lastErrorCode = null;
+
 let pollInterval = null;
+let pollDelay = 1000; // default 1 second
 let paused = false;
+let lowLatency = false;
+
 
 // Track previous state per user ID
 const memberStates = {};
@@ -39,42 +45,64 @@ function testApiKey() {
 }
 
 function startPolling() {
-    if (pollInterval) return;
+    if (pollInterval) clearInterval(pollInterval);
 
     pollInterval = setInterval(() => {
         if (!paused) {
             fetchMembers();
         }
-    }, 1000);
+    }, pollDelay);
+}
+
+function toggleLowLatency() {
+    lowLatency = document.getElementById('lowLatency').checked;
+
+    pollDelay = lowLatency ? 2000 : 1000;
+    startPolling(); // restart interval with new delay
+
+    updateStatusDisplay(); // update timer color thresholds immediately
 }
 
 function fetchMembers() {
     fetch(api_url + apikey + '&timestamp=' + Math.floor(Date.now() / 1000))
         .then(res => res.json())
         .then(data => {
+            // Handle API error
+            if (data.error) {
+                lastErrorCode = data.error.error;
+                updateStatusDisplay();
+                return;
+            }
+
+            // Successful response clears error
+            lastErrorCode = null;
+            lastCallTime = Date.now();
+            updateStatusDisplay();
+
             if (!data.members) return;
+
             data.members.forEach(user => {
                 const prevState = memberStates[user.id];
                 const currentState = user.status.state;
 
-                // First time seeing user → just store state
                 if (!prevState) {
-					console.log(`Storing users:`, currentState);
                     memberStates[user.id] = currentState;
                     return;
                 }
 
-                // Detect Okay → Hospital transition
                 if (prevState === 'Okay' && currentState === 'Hospital') {
                     logHospitalEvent(user);
-					console.log(`Detected change:`, user);
                 }
 
                 memberStates[user.id] = currentState;
             });
         })
-        .catch(err => console.error(err));
-	console.log("Tick");
+        .catch(err => {
+            // Network or fetch failure
+            lastErrorCode = 'NETWORK';
+            updateStatusDisplay();
+            console.error(err);
+        });
 }
 
 function logHospitalEvent(user) {
@@ -87,13 +115,13 @@ function logHospitalEvent(user) {
 
 	const timeSpan = document.createElement('span');
 	timeSpan.textContent = `${hh}:${mm} - `;
-
     
     const idSpan = document.createElement('span');
     idSpan.textContent = `[${user.id}] `;
 
     const nameSpan = document.createElement('span');
-    nameSpan.textContent = `${user.name}: `;
+	nameSpan.textContent = `${user.name}: `;
+	nameSpan.classList.add('user-name');
 
     const descSpan = document.createElement('span');
     descSpan.textContent = `${user.status.description} - `;
@@ -113,19 +141,131 @@ function logHospitalEvent(user) {
 function togglePause() {
     paused = !paused;
     document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+    updateStatusDisplay();
 }
+
+
+function updateStatusDisplay() {
+    const statusSpan = document.getElementById('statusDisplay');
+
+    let greenThreshold, yellowThreshold, redThreshold;
+
+if (paused) {
+    statusSpan.style.backgroundColor = 'gray';
+    return;
+}
+
+// Determine thresholds
+if (lowLatency) {
+    greenThreshold = 2000;
+    yellowThreshold = 4000;
+    redThreshold = 4000; // anything above yellow
+} else {
+    greenThreshold = 1000;
+    yellowThreshold = 3000;
+    redThreshold = 3000;
+}
+
+if (!lastCallTime) return;
+
+const now = Date.now();
+const diff = now - lastCallTime;
+
+const d = new Date(lastCallTime);
+const hh = String(d.getUTCHours()).padStart(2, '0');
+const mm = String(d.getUTCMinutes()).padStart(2, '0');
+const ss = String(d.getUTCSeconds()).padStart(2, '0');
+
+let text = `Last call: ${hh}:${mm}:${ss}`;
+
+if (lastErrorCode) {
+    text += ` | Error: ${lastErrorCode}`;
+}
+
+statusSpan.textContent = text;
+
+// Color logic
+if (diff <= greenThreshold) {
+    statusSpan.style.backgroundColor = 'green';
+} else if (diff <= yellowThreshold) {
+    statusSpan.style.backgroundColor = 'yellow';
+} else {
+    statusSpan.style.backgroundColor = 'red';
+}
+
+}
+
+setInterval(updateStatusDisplay, 500);
+
 </script>
 <style>
+/* Global styles */
+body {
+    background-color: #333;
+    color: #ccc;
+    font-size: 20px;
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+/* API input */
+#api_input h4 {
+    margin-bottom: 8px;
+}
+
+#api_input input {
+    font-size: 18px;
+    padding: 4px 8px;
+}
+
+/* Log output */
+#log_output {
+    margin-top: 20px;
+}
+
+/* Each log entry container */
+#output > div {
+    margin-bottom: 10px;
+}
+
+/* Highlight username */
+.user-name {
+    color: #74c0fc;
+}
+
+/* Pause button */
+#pauseBtn {
+    width: 80px;       /* fixed width for stability */
+    text-align: center;
+    padding: 4px 8px;
+}
+
+/* Status display */
+#statusDisplay {
+    padding: 4px 8px;
+    margin-left: 8px;
+    border-radius: 4px;
+    font-family: monospace;
+}
 </style>
 </head>
 <body>
 <div id="api_input">
 <h4>Enter a limited API key:</h4>
-<input type="text" id="api"></input><button onclick="submit_api()">Submit</button>
-This script will make one API call every second.<br>Torn allows 100 calls per minute, so make sure you're not currently using your APIs for anything else that makes many calls per minute!<br>Your key will not be stored. All data is visible to you only and will be gone when you refresh/close the page.
+<input type="text" id="api"></input><button onclick="submit_api()">Submit</button><br>
+<br>This script will make one API call every second or every other second, you can choose.<br>
+<br>Torn allows 100 calls per minute, if you're using other services that make a lot of API calls, use low-latency mode.<br>
+<br>Your key will not be stored. All data is visible to you only and will be gone when you refresh/close the page.<br>
 </div>
 <div id="log_output" style="display:none">
-<button id="pauseBtn" onclick="togglePause()">Pause</button><br>
+<label>
+  <input type="checkbox" id="lowLatency" onchange="toggleLowLatency()">
+  Low-latency mode (2s)
+</label>
+<br>
+<button id="pauseBtn" onclick="togglePause()">Pause</button>
+<span id="statusDisplay">Last call: --:--</span>
+<br>
 <span id="output"></span>
 </div>
 </body>
