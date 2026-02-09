@@ -7,12 +7,10 @@ let lastCallTime = null;
 let lastErrorCode = null;
 
 let pollInterval = null;
-let pollDelay = 1000; // default 1 second
+let pollDelay = 1000;
 let paused = false;
 let lowLatency = false;
 
-
-// Track previous state per user ID
 const memberStates = {};
 
 function submit_api() {
@@ -58,23 +56,21 @@ function toggleLowLatency() {
     lowLatency = document.getElementById('lowLatency').checked;
 
     pollDelay = lowLatency ? 2000 : 1000;
-    startPolling(); // restart interval with new delay
+    startPolling();
 
-    updateStatusDisplay(); // update timer color thresholds immediately
+    updateStatusDisplay();
 }
 
 function fetchMembers() {
     fetch(api_url + apikey + '&timestamp=' + Math.floor(Date.now() / 1000))
         .then(res => res.json())
         .then(data => {
-            // Handle API error
             if (data.error) {
                 lastErrorCode = data.error.error;
                 updateStatusDisplay();
                 return;
             }
 
-            // Successful response clears error
             lastErrorCode = null;
             lastCallTime = Date.now();
             updateStatusDisplay();
@@ -98,7 +94,6 @@ function fetchMembers() {
             });
         })
         .catch(err => {
-            // Network or fetch failure
             lastErrorCode = 'NETWORK';
             updateStatusDisplay();
             console.error(err);
@@ -155,11 +150,10 @@ if (paused) {
     return;
 }
 
-// Determine thresholds
 if (lowLatency) {
     greenThreshold = 2000;
     yellowThreshold = 4000;
-    redThreshold = 4000; // anything above yellow
+    redThreshold = 4000;
 } else {
     greenThreshold = 1000;
     yellowThreshold = 3000;
@@ -184,7 +178,6 @@ if (lastErrorCode) {
 
 statusSpan.textContent = text;
 
-// Color logic
 if (diff <= greenThreshold) {
     statusSpan.style.backgroundColor = 'green';
 } else if (diff <= yellowThreshold) {
@@ -199,7 +192,6 @@ setInterval(updateStatusDisplay, 500);
 
 </script>
 <style>
-/* Global styles */
 body {
     background-color: #333;
     color: #ccc;
@@ -218,7 +210,6 @@ a:visited {
 }
 
 
-/* API input */
 #api_input h4 {
     margin-bottom: 8px;
 }
@@ -228,29 +219,24 @@ a:visited {
     padding: 4px 8px;
 }
 
-/* Log output */
 #log_output {
     margin-top: 20px;
 }
 
-/* Each log entry container */
 #output > div {
     margin-bottom: 10px;
 }
 
-/* Highlight username */
 .user-name {
     color: #74c0fc;
 }
 
-/* Pause button */
 #pauseBtn {
-    width: 80px;       /* fixed width for stability */
+    width: 80px;
     text-align: center;
     padding: 4px 8px;
 }
 
-/* Status display */
 #statusDisplay {
     padding: 4px 8px;
     margin-left: 8px;
