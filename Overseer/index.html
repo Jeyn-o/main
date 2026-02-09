@@ -1,0 +1,132 @@
+<html>
+<head>
+<script>
+const api_url = 'https://api.torn.com/v2/faction/members?striptags=true&key=';
+let apikey = '';
+let pollInterval = null;
+let paused = false;
+
+// Track previous state per user ID
+const memberStates = {};
+
+function submit_api() {
+    apikey = document.getElementById('api').value.trim();
+    if (!apikey) return;
+
+    testApiKey();
+}
+
+function testApiKey() {
+    fetch(api_url + apikey)
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error.error);
+                return;
+            }
+
+            if (data.members) {
+                document.getElementById('api_input').style.display = 'none';
+                document.getElementById('log_output').style.display = '';
+
+                startPolling();
+            }
+        })
+        .catch(err => {
+            alert('API request failed');
+            console.error(err);
+        });
+}
+
+function startPolling() {
+    if (pollInterval) return;
+
+    pollInterval = setInterval(() => {
+        if (!paused) {
+            fetchMembers();
+        }
+    }, 1000);
+}
+
+function fetchMembers() {
+    fetch(api_url + apikey + '&timestamp=' + Math.floor(Date.now() / 1000))
+        .then(res => res.json())
+        .then(data => {
+            if (!data.members) return;
+            data.members.forEach(user => {
+                const prevState = memberStates[user.id];
+                const currentState = user.status.state;
+
+                // First time seeing user → just store state
+                if (!prevState) {
+					console.log(`Storing users:`, currentState);
+                    memberStates[user.id] = currentState;
+                    return;
+                }
+
+                // Detect Okay → Hospital transition
+                if (prevState === 'Okay' && currentState === 'Hospital') {
+                    logHospitalEvent(user);
+					console.log(`Detected change:`, user);
+                }
+
+                memberStates[user.id] = currentState;
+            });
+        })
+        .catch(err => console.error(err));
+	console.log("Tick");
+}
+
+function logHospitalEvent(user) {
+    const output = document.getElementById('output');
+    const container = document.createElement('div');
+
+    const now = new Date();
+	const hh = String(now.getUTCHours()).padStart(2, '0');
+	const mm = String(now.getUTCMinutes()).padStart(2, '0');
+
+	const timeSpan = document.createElement('span');
+	timeSpan.textContent = `${hh}:${mm} - `;
+
+    
+    const idSpan = document.createElement('span');
+    idSpan.textContent = `[${user.id}] `;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = `${user.name}: `;
+
+    const descSpan = document.createElement('span');
+    descSpan.textContent = `${user.status.description} - `;
+
+    const detailsSpan = document.createElement('span');
+    detailsSpan.textContent = user.status.details;
+
+    container.appendChild(timeSpan);
+    container.appendChild(idSpan);
+    container.appendChild(nameSpan);
+    container.appendChild(descSpan);
+    container.appendChild(detailsSpan);
+
+    output.prepend(container);
+}
+
+function togglePause() {
+    paused = !paused;
+    document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+}
+</script>
+<style>
+</style>
+</head>
+<body>
+<div id="api_input">
+<h4>Enter a limited API key:</h4>
+<input type="text" id="api"></input><button onclick="submit_api()">Submit</button>
+This script will make one API call every second.<br>Torn allows 100 calls per minute, so make sure you're not currently using your APIs for anything else that makes many calls per minute!<br>Your key will not be stored. All data is visible to you only and will be gone when you refresh/close the page.
+</div>
+<div id="log_output" style="display:none">
+<button id="pauseBtn" onclick="togglePause()">Pause</button><br>
+<span id="output"></span>
+</div>
+</body>
+</html>
