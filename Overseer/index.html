@@ -7,7 +7,7 @@ let lastCallTime = null;
 let lastErrorCode = null;
 
 let pollInterval = null;
-let pollDelay = 1000;
+let pollDelay = 1000; //changable to 2000 in low latency
 let paused = false;
 let lowLatency = false;
 
@@ -105,18 +105,20 @@ function logHospitalEvent(user) {
     const container = document.createElement('div');
 
     const now = new Date();
-	const hh = String(now.getUTCHours()).padStart(2, '0');
-	const mm = String(now.getUTCMinutes()).padStart(2, '0');
+    const hh = String(now.getUTCHours()).padStart(2, '0');
+    const mm = String(now.getUTCMinutes()).padStart(2, '0');
+    const ss = String(now.getUTCSeconds()).padStart(2, '0');
 
-	const timeSpan = document.createElement('span');
-	timeSpan.textContent = `${hh}:${mm} - `;
+    const timeSpan = document.createElement('span');
+    timeSpan.textContent = `${hh}:${mm}:${ss} - `;
     
     const idSpan = document.createElement('span');
     idSpan.textContent = `[${user.id}] `;
 
-    const nameSpan = document.createElement('span');
-	nameSpan.textContent = `${user.name}: `;
-	nameSpan.classList.add('user-name');
+	const nameLink = document.createElement('a');
+	nameLink.textContent = user.name;
+	nameLink.href = `https://www.torn.com/profiles.php?XID=${user.id}`;
+	nameLink.target = "_blank";
 
     const descSpan = document.createElement('span');
     descSpan.textContent = `${user.status.description} - `;
@@ -125,10 +127,10 @@ function logHospitalEvent(user) {
     detailsSpan.textContent = user.status.details;
 
     container.appendChild(timeSpan);
-    container.appendChild(idSpan);
-    container.appendChild(nameSpan);
-    container.appendChild(descSpan);
-    container.appendChild(detailsSpan);
+	container.appendChild(idSpan);
+	container.appendChild(nameLink);
+	container.appendChild(descSpan);
+	container.appendChild(detailsSpan);
 
     output.prepend(container);
 }
@@ -192,6 +194,7 @@ setInterval(updateStatusDisplay, 500);
 
 </script>
 <style>
+/* Global styles */
 body {
     background-color: #333;
     color: #ccc;
@@ -210,6 +213,7 @@ a:visited {
 }
 
 
+/* API input */
 #api_input h4 {
     margin-bottom: 8px;
 }
@@ -219,24 +223,24 @@ a:visited {
     padding: 4px 8px;
 }
 
+/* Log output */
 #log_output {
     margin-top: 20px;
 }
 
+/* Each log entry container */
 #output > div {
     margin-bottom: 10px;
 }
 
-.user-name {
-    color: #74c0fc;
-}
-
+/* Pause button */
 #pauseBtn {
     width: 80px;
     text-align: center;
     padding: 4px 8px;
 }
 
+/* Status display */
 #statusDisplay {
     padding: 4px 8px;
     margin-left: 8px;
