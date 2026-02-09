@@ -121,7 +121,7 @@ function logHospitalEvent(user) {
 	nameLink.target = "_blank";
 
     const descSpan = document.createElement('span');
-    descSpan.textContent = `${user.status.description} - `;
+    descSpan.textContent = ` ${user.status.description} - `;
 
     const detailsSpan = document.createElement('span');
     detailsSpan.textContent = user.status.details;
